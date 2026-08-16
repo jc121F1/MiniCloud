@@ -9,6 +9,7 @@ import jc121f1.model.instance.api.ListInstanceRequest;
 import jc121f1.model.instance.api.StartInstanceRequest;
 import jc121f1.model.instance.api.StopInstanceRequest;
 import jc121f1.model.instance.dao.Instance;
+import jc121f1.services.instance.compute.ComputeBackend;
 import jc121f1.services.instance.InstanceService;
 import jc121f1.services.instance.InstanceServiceImpl;
 import org.assertj.core.api.Assertions;
@@ -35,13 +36,14 @@ public class InstanceServiceTest {
     private static final int DEFAULT_MEMORY = 1;
 
     @Mock private Clock clock;
+    @Mock private ComputeBackend computeBackend;
 
     @Nested class Given_an_instance_service {
         InstanceService instanceService;
 
         @BeforeEach
         void setup() {
-            instanceService = new InstanceServiceImpl(clock);
+            instanceService = new InstanceServiceImpl(clock, computeBackend);
         }
 
         @Nested class When_receiving_a_valid_create_request {

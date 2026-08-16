@@ -12,7 +12,7 @@ import jc121f1.wbs.handlers.post.StopInstanceHandler;
 import javax.inject.Singleton;
 
 @Singleton
-@Component(modules = ServiceModule.class)
+@Component(modules = {ServiceModule.class, EnvironmentModule.class})
 public interface WebserviceComponent {
     RootHandler rootHandler();
 

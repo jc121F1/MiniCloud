@@ -11,8 +11,10 @@ import jc121f1.dagger.qualifiers.RegistryMail;
 import jc121f1.dagger.qualifiers.RegistryPass;
 import jc121f1.dagger.qualifiers.RegistryUrl;
 import jc121f1.dagger.qualifiers.RegistryUser;
+import jc121f1.services.instance.compute.ComputeBackend;
 import jc121f1.services.instance.InstanceService;
 import jc121f1.services.instance.InstanceServiceImpl;
+import jc121f1.services.instance.compute.DockerComputeBackend;
 
 import javax.inject.Singleton;
 import java.time.Clock;
@@ -23,8 +25,14 @@ import java.time.temporal.ChronoUnit;
 public class ServiceModule {
 
     @Provides @Singleton
-    public InstanceService instanceService() {
-        return new InstanceServiceImpl(Clock.systemUTC());
+    public InstanceService instanceService(Clock clock, ComputeBackend computeBackend) {
+        return new InstanceServiceImpl(clock, computeBackend);
+    }
+
+    @Provides @Singleton
+    public ComputeBackend computeBackend(DockerClient dockerClient) {
+        return new DockerComputeBackend(dockerClient);
+    }
 
     @Provides @Singleton
     public Clock clock() {

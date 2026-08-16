@@ -1,5 +1,6 @@
 package jc121f1.services.instance;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import jc121f1.model.instance.InstanceState;
 import jc121f1.model.instance.api.CreateInstanceRequest;
 import jc121f1.model.instance.api.DeleteInstanceRequest;
@@ -8,6 +9,7 @@ import jc121f1.model.instance.api.ListInstanceRequest;
 import jc121f1.model.instance.api.StartInstanceRequest;
 import jc121f1.model.instance.api.StopInstanceRequest;
 import jc121f1.model.instance.dao.Instance;
+import jc121f1.services.instance.compute.ComputeBackend;
 
 import javax.inject.Inject;
 import java.time.Clock;
@@ -22,9 +24,16 @@ public class InstanceServiceImpl implements InstanceService {
     private final Map<String, String> idsByName = new HashMap<>();
     private final Clock clock;
 
+    @SuppressFBWarnings(
+            value = "EI_EXPOSE_REP2",
+            justification = "computeBackend is an injected service dependency and is intentionally shared."
+    )
+    private final ComputeBackend computeBackend;
+
     @Inject
-    public InstanceServiceImpl(Clock clock) {
+    public InstanceServiceImpl(Clock clock, ComputeBackend computeBackend) {
         this.clock = clock;
+        this.computeBackend = computeBackend;
     }
 
     @Override
