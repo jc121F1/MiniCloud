@@ -3,7 +3,11 @@ package jc121f1.service.instance;
 import jc121f1.annotations.MiniCloudTest;
 import jc121f1.model.instance.InstanceState;
 import jc121f1.model.instance.api.CreateInstanceRequest;
+import jc121f1.model.instance.api.DeleteInstanceRequest;
+import jc121f1.model.instance.api.GetInstanceRequest;
 import jc121f1.model.instance.api.ListInstanceRequest;
+import jc121f1.model.instance.api.StartInstanceRequest;
+import jc121f1.model.instance.api.StopInstanceRequest;
 import jc121f1.model.instance.dao.Instance;
 import jc121f1.services.instance.InstanceService;
 import jc121f1.services.instance.InstanceServiceImpl;
@@ -178,6 +182,332 @@ public class InstanceServiceTest {
                     Assertions.assertThat(instanceService.list()).hasSize(1);
                     Assertions.assertThat(instanceService.list().getFirst()).isEqualTo(expected);
                 }
+            }
+        }
+
+        @Nested
+        class When_receiving_a_valid_get_request {
+            Instance expected;
+
+            @BeforeEach
+            void setup() {
+                expected = instanceService.create(CreateInstanceRequest.builder()
+                        .name(INSTANCE_NAME)
+                        .cpu(DEFAULT_CPU)
+                        .memory(DEFAULT_MEMORY)
+                        .build());
+            }
+
+            @Nested
+            class With_instance_id {
+                Instance response;
+
+                @BeforeEach
+                void setup() {
+                    GetInstanceRequest request = GetInstanceRequest.builder()
+                            .instanceId(expected.getId())
+                            .build();
+
+                    response = instanceService.get(request);
+                }
+
+                @Test
+                void It_should_return_the_instance() {
+                    Assertions.assertThat(response).isEqualTo(expected);
+                }
+            }
+
+            @Nested
+            class With_instance_name {
+                Instance response;
+
+                @BeforeEach
+                void setup() {
+                    GetInstanceRequest request = GetInstanceRequest.builder()
+                            .name(expected.getName())
+                            .build();
+
+                    response = instanceService.get(request);
+                }
+
+                @Test
+                void It_should_return_the_instance() {
+                    Assertions.assertThat(response).isEqualTo(expected);
+                }
+            }
+
+            @Nested
+            class With_unknown_identifier {
+                @Test
+                void It_should_throw_exception() {
+                    GetInstanceRequest request = GetInstanceRequest.builder()
+                            .instanceId("i-does-not-exist")
+                            .build();
+
+                    Assertions.assertThatThrownBy(() -> instanceService.get(request))
+                            .hasMessage("Resource not found");
+                }
+            }
+        }
+
+        @Test
+        void Get_should_require_an_identifier() {
+            GetInstanceRequest request = GetInstanceRequest.builder()
+                    .build();
+
+            Assertions.assertThatThrownBy(() -> instanceService.get(request))
+                    .hasMessageContaining("name")
+                    .hasMessageContaining("instanceId");
+        }
+
+        @Nested
+        class When_receiving_a_valid_delete_request {
+            Instance expected;
+            Instance response;
+
+            @BeforeEach
+            void setup() {
+                expected = instanceService.create(CreateInstanceRequest.builder()
+                        .name(INSTANCE_NAME)
+                        .cpu(DEFAULT_CPU)
+                        .memory(DEFAULT_MEMORY)
+                        .build());
+            }
+
+            @Nested
+            class With_instance_id {
+                @BeforeEach
+                void setup() {
+                    DeleteInstanceRequest request = DeleteInstanceRequest.builder()
+                            .instanceId(expected.getId())
+                            .build();
+
+                    response = instanceService.delete(request);
+                }
+
+                @Test
+                void It_should_return_the_deleted_instance() {
+                    Assertions.assertThat(response).isEqualTo(expected);
+                }
+
+                @Test
+                void Instance_should_no_longer_be_listable() {
+                    Assertions.assertThat(instanceService.list()).isEmpty();
+                }
+
+                @Test
+                void Instance_should_no_longer_be_gettable_by_id() {
+                    GetInstanceRequest request = GetInstanceRequest.builder()
+                            .instanceId(expected.getId())
+                            .build();
+
+                    Assertions.assertThatThrownBy(() -> instanceService.get(request))
+                            .hasMessage("Resource not found");
+                }
+
+                @Test
+                void Instance_should_no_longer_be_gettable_by_name() {
+                    GetInstanceRequest request = GetInstanceRequest.builder()
+                            .name(expected.getName())
+                            .build();
+
+                    Assertions.assertThatThrownBy(() -> instanceService.get(request))
+                            .hasMessage("Resource not found");
+                }
+            }
+
+            @Nested
+            class With_instance_name {
+                @BeforeEach
+                void setup() {
+                    DeleteInstanceRequest request = DeleteInstanceRequest.builder()
+                            .name(expected.getName())
+                            .build();
+
+                    response = instanceService.delete(request);
+                }
+
+                @Test
+                void It_should_return_the_deleted_instance() {
+                    Assertions.assertThat(response).isEqualTo(expected);
+                }
+
+                @Test
+                void Instance_should_no_longer_be_listable() {
+                    Assertions.assertThat(instanceService.list()).isEmpty();
+                }
+
+                @Test
+                void Instance_should_no_longer_be_gettable_by_id() {
+                    GetInstanceRequest request = GetInstanceRequest.builder()
+                            .instanceId(expected.getId())
+                            .build();
+
+                    Assertions.assertThatThrownBy(() -> instanceService.get(request))
+                            .hasMessage("Resource not found");
+                }
+
+                @Test
+                void Instance_should_no_longer_be_gettable_by_name() {
+                    GetInstanceRequest request = GetInstanceRequest.builder()
+                            .name(expected.getName())
+                            .build();
+
+                    Assertions.assertThatThrownBy(() -> instanceService.get(request))
+                            .hasMessage("Resource not found");
+                }
+            }
+        }
+
+        @Test
+        void Delete_should_require_an_identifier() {
+            DeleteInstanceRequest request = DeleteInstanceRequest.builder()
+                    .build();
+
+            Assertions.assertThatThrownBy(() -> instanceService.delete(request))
+                    .hasMessageContaining("name")
+                    .hasMessageContaining("instanceId");
+        }
+
+        @Test
+        void Delete_should_throw_for_unknown_instance() {
+            DeleteInstanceRequest request = DeleteInstanceRequest.builder()
+                    .instanceId("i-does-not-exist")
+                    .build();
+
+            Assertions.assertThatThrownBy(() -> instanceService.delete(request))
+                    .hasMessage("Resource not found");
+        }
+
+        @Nested
+        class When_starting_an_instance {
+            Instance instance;
+
+            @BeforeEach
+            void setup() {
+                instance = instanceService.create(CreateInstanceRequest.builder()
+                        .name(INSTANCE_NAME)
+                        .cpu(DEFAULT_CPU)
+                        .memory(DEFAULT_MEMORY)
+                        .build());
+
+                instance.setState(InstanceState.STOPPED);
+            }
+
+            @Test
+            void It_should_throw_for_unknown_instance() {
+                StartInstanceRequest request = StartInstanceRequest.builder()
+                        .instanceId("i-does-not-exist")
+                        .build();
+
+                Assertions.assertThatThrownBy(() -> instanceService.start(request))
+                        .hasMessage("Resource not found");
+            }
+
+            @Test
+            void It_should_set_state_to_starting() {
+                StartInstanceRequest request = StartInstanceRequest.builder()
+                        .instanceId(instance.getId())
+                        .build();
+
+                Instance response = instanceService.start(request);
+
+                Assertions.assertThat(response).isEqualTo(instance);
+                Assertions.assertThat(response.getState()).isEqualTo(InstanceState.STARTING);
+            }
+
+            @Test
+            void It_should_support_lookup_by_name() {
+                StartInstanceRequest request = StartInstanceRequest.builder()
+                        .name(instance.getName())
+                        .build();
+
+                Instance response = instanceService.start(request);
+
+                Assertions.assertThat(response.getState()).isEqualTo(InstanceState.STARTING);
+            }
+
+            @Test
+            void It_should_reject_an_instance_that_cannot_be_started() {
+                instance.setState(InstanceState.RUNNING);
+
+                StartInstanceRequest request = StartInstanceRequest.builder()
+                        .instanceId(instance.getId())
+                        .build();
+
+                Assertions.assertThatThrownBy(() -> instanceService.start(request))
+                        .hasMessageContaining("not in a startable state");
+            }
+
+            @Test
+            void It_should_require_an_identifier() {
+                StartInstanceRequest request = StartInstanceRequest.builder()
+                        .build();
+
+                Assertions.assertThatThrownBy(() -> instanceService.start(request))
+                        .hasMessageContaining("name")
+                        .hasMessageContaining("instanceId");
+            }
+        }
+
+        @Nested
+        class When_stopping_an_instance {
+            Instance instance;
+
+            @BeforeEach
+            void setup() {
+                instance = instanceService.create(CreateInstanceRequest.builder()
+                        .name(INSTANCE_NAME)
+                        .cpu(DEFAULT_CPU)
+                        .memory(DEFAULT_MEMORY)
+                        .build());
+
+                instance.setState(InstanceState.RUNNING);
+            }
+
+            @Test
+            void It_should_set_state_to_stopping() {
+                StopInstanceRequest request = StopInstanceRequest.builder()
+                        .instanceId(instance.getId())
+                        .build();
+
+                Instance response = instanceService.stop(request);
+
+                Assertions.assertThat(response).isEqualTo(instance);
+                Assertions.assertThat(response.getState()).isEqualTo(InstanceState.STOPPING);
+            }
+
+            @Test
+            void It_should_support_lookup_by_name() {
+                StopInstanceRequest request = StopInstanceRequest.builder()
+                        .name(instance.getName())
+                        .build();
+
+                Instance response = instanceService.stop(request);
+
+                Assertions.assertThat(response.getState()).isEqualTo(InstanceState.STOPPING);
+            }
+
+            @Test
+            void It_should_reject_an_instance_that_cannot_be_stopped() {
+                instance.setState(InstanceState.STOPPED);
+
+                StopInstanceRequest request = StopInstanceRequest.builder()
+                        .instanceId(instance.getId())
+                        .build();
+
+                Assertions.assertThatThrownBy(() -> instanceService.stop(request))
+                        .hasMessageContaining("not in a startable state");
+            }
+
+            @Test
+            void It_should_require_an_identifier() {
+                StopInstanceRequest request = StopInstanceRequest.builder()
+                        .build();
+
+                Assertions.assertThatThrownBy(() -> instanceService.stop(request))
+                        .hasMessageContaining("name")
+                        .hasMessageContaining("instanceId");
             }
         }
 
