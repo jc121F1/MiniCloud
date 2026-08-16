@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jc121f1.model.instance.InstanceState;
 import lombok.Builder;
+import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -12,6 +13,7 @@ import java.time.temporal.ChronoUnit;
 
 @Getter
 @Builder
+@EqualsAndHashCode(callSuper = false)
 public class Instance {
     private String name;
 
