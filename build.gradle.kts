@@ -39,6 +39,7 @@ dependencies {
     implementation("io.javalin:javalin:7.2.3")
     implementation("com.google.dagger:dagger:2.60.1")
     implementation("org.slf4j:slf4j-api:2.0.17")
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.22.1")
     runtimeOnly("ch.qos.logback:logback-classic:1.5.18")
 
     testImplementation(platform("org.junit:junit-bom:5.13.4"))
