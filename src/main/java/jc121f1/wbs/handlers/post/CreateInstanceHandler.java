@@ -1,6 +1,8 @@
 package jc121f1.wbs.handlers.post;
 
 import io.javalin.http.Context;
+import jc121f1.model.instance.api.CreateInstanceRequest;
+import jc121f1.model.instance.dao.Instance;
 import jc121f1.services.instance.InstanceService;
 import jc121f1.wbs.handlers.InstanceHandler;
 import org.jetbrains.annotations.NotNull;
@@ -16,6 +18,10 @@ public class CreateInstanceHandler extends InstanceHandler {
 
     @Override
     public void handle(@NotNull Context ctx) throws Exception {
+        CreateInstanceRequest request = ctx.bodyAsClass(CreateInstanceRequest.class);
 
+        Instance instance = instanceService.create(request);
+
+        ctx.json(instance);
     }
 }
