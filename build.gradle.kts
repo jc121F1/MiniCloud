@@ -68,6 +68,35 @@ tasks.named<ShadowJar>("shadowJar") {
     }
 }
 
+tasks.jacocoTestReport {
+    dependsOn(tasks.test)
+
+    reports {
+        html.required.set(true)
+        xml.required.set(true)
+        csv.required.set(false)
+    }
+}
+
+tasks.build {
+    dependsOn(tasks.jacocoTestReport)
+
+    doLast {
+        val report = tasks.jacocoTestReport
+            .get()
+            .reports
+            .html
+            .outputLocation
+            .get()
+            .asFile
+            .resolve("index.html")
+
+        println()
+        println("JaCoCo coverage report:")
+        println(report.toURI())
+    }
+}
+
 tasks.named<Checkstyle>("checkstyleMain") {
     configFile = file("config/checkstyle/checkstyleMain.xml")
 }
