@@ -5,12 +5,14 @@ import dagger.Provides;
 import jc121f1.services.instance.InstanceService;
 import jc121f1.services.instance.InstanceServiceImpl;
 
+import javax.inject.Singleton;
 import java.time.Clock;
 
 @Module
 public class ServiceModule {
 
-    @Provides public InstanceService instanceService() {
+    @Provides @Singleton
+    public InstanceService instanceService() {
         return new InstanceServiceImpl(Clock.systemUTC());
     }
 }
