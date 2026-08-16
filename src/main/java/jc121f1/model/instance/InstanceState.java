@@ -1,8 +1,9 @@
 package jc121f1.model.instance;
 
 public enum InstanceState {
-    STARTED,
+    STARTING,
     STOPPED,
-    ACTIVE,
+    STOPPING,
+    RUNNING,
     MISSING
 }
