@@ -11,7 +11,6 @@ plugins {
 }
 
 
-
 group = "jc121f1"
 version = "1.0-SNAPSHOT"
 
@@ -40,11 +39,12 @@ dependencies {
     implementation("com.google.dagger:dagger:2.60.1")
     implementation("org.slf4j:slf4j-api:2.0.17")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.22.1")
+    implementation("com.github.docker-java:docker-java:3.7.1")
+    implementation("com.github.docker-java:docker-java-transport-httpclient5:3.7.1")
     runtimeOnly("ch.qos.logback:logback-classic:1.5.18")
 
     testImplementation(platform("org.junit:junit-bom:5.13.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
-    testImplementation("org.mockito:mockito-core:5.19.0")
     testImplementation("org.assertj:assertj-core:3.27.7")
     testImplementation("org.mockito:mockito-junit-jupiter:5.12.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
