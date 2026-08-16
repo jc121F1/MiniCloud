@@ -11,7 +11,7 @@ import javax.annotation.Nullable;
 @NoArgsConstructor
 @AllArgsConstructor
 @Getter
-public class GetInstanceRequest {
+public class StopInstanceRequest {
     @Nullable
     private String instanceId;
     @Nullable
