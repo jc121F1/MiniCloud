@@ -5,6 +5,78 @@
 
 <module name="Checker">
     <module name="TreeWalker">
+        <!-- ==================== -->
+        <!-- Imports              -->
+        <!-- ==================== -->
+
+        <module name="AvoidStarImport"/>
         <module name="UnusedImports"/>
+        <module name="RedundantImport"/>
+        <module name="IllegalImport"/>
+
+
+        <!-- ==================== -->
+        <!-- Naming               -->
+        <!-- ==================== -->
+
+        <module name="TypeName"/>
+        <module name="MethodName"/>
+        <module name="LocalVariableName"/>
+        <module name="ParameterName"/>
+        <module name="MemberName"/>
+        <module name="LocalFinalVariableName"/>
+        <module name="ClassTypeParameterName"/>
+        <module name="MethodTypeParameterName"/>
+
+
+        <!-- ==================== -->
+        <!-- Whitespace            -->
+        <!-- ==================== -->
+
+        <module name="WhitespaceAfter"/>
+        <module name="WhitespaceAround"/>
+        <module name="NoWhitespaceBefore"/>
+        <module name="NoWhitespaceAfter"/>
+
+        <module name="EmptyLineSeparator"/>
+
+
+        <!-- ==================== -->
+        <!-- Braces                -->
+        <!-- ==================== -->
+
+        <module name="NeedBraces"/>
+        <module name="LeftCurly"/>
+        <module name="RightCurly"/>
+
+
+        <!-- ==================== -->
+        <!-- Basic correctness     -->
+        <!-- ==================== -->
+
+        <module name="EmptyStatement"/>
+        <module name="EqualsHashCode"/>
+        <module name="FallThrough"/>
+        <module name="MissingSwitchDefault"/>
+        <module name="DefaultComesLast"/>
+
+
+        <!-- ==================== -->
+        <!-- Visibility            -->
+        <!-- ==================== -->
+
+        <module name="VisibilityModifier">
+            <property name="protectedAllowed" value="true"/>
+        </module>
+
+        <!-- ==================== -->
+        <!-- Code quality          -->
+        <!-- ==================== -->
+
+        <module name="SimplifyBooleanExpression"/>
+        <module name="SimplifyBooleanReturn"/>
+        <module name="InnerAssignment"/>
+        <module name="DeclarationOrder"/>
+
     </module>
 </module>
