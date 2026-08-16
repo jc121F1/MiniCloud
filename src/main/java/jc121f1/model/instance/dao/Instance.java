@@ -6,9 +6,14 @@ import java.time.Instant;
 
 public class Instance {
     private String name;
+
     private int cpu;
+
     private int memory;
+
     private String id;
+
     private InstanceState state;
+
     private Instant createdAt;
 }

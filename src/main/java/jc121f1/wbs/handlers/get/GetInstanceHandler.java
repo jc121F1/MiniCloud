@@ -15,6 +15,7 @@ public class GetInstanceHandler extends InstanceHandler {
     public GetInstanceHandler(InstanceService instanceService) {
         super(instanceService);
     }
+
     @Override
     public void handle(@NotNull Context ctx) {
         GetInstanceRequest request = ctx.bodyAsClass(GetInstanceRequest.class);

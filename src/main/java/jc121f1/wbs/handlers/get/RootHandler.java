@@ -7,11 +7,11 @@ import org.jetbrains.annotations.NotNull;
 import javax.inject.Inject;
 
 public class RootHandler implements BaseHandler {
+    private static final String HOW_TO_GUIDE = "How to use my service:";
+
     @Inject
     public RootHandler() {
     }
-
-    private static final String HOW_TO_GUIDE = "How to use my service:";
 
     @Override
     public void handle(@NotNull Context ctx) {

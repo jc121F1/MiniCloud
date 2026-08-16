@@ -11,10 +11,13 @@ import jc121f1.wbs.handlers.post.CreateInstanceHandler;
 import jc121f1.wbs.handlers.post.StartInstanceHandler;
 import jc121f1.wbs.handlers.post.StopInstanceHandler;
 
-import static io.javalin.apibuilder.ApiBuilder.*;
+import static io.javalin.apibuilder.ApiBuilder.delete;
+import static io.javalin.apibuilder.ApiBuilder.get;
+import static io.javalin.apibuilder.ApiBuilder.path;
+import static io.javalin.apibuilder.ApiBuilder.post;
 
 public class WebService {
-    static Javalin app;
+    private static Javalin app;
 
     public static void start() {
         WebserviceComponent wbsComponent = DaggerWebserviceComponent.create();
