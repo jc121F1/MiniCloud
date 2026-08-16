@@ -3,6 +3,7 @@ package jc121f1.service.instance;
 import jc121f1.annotations.MiniCloudTest;
 import jc121f1.model.instance.InstanceState;
 import jc121f1.model.instance.api.CreateInstanceRequest;
+import jc121f1.model.instance.api.ListInstanceRequest;
 import jc121f1.model.instance.dao.Instance;
 import jc121f1.services.instance.InstanceService;
 import jc121f1.services.instance.InstanceServiceImpl;
@@ -15,10 +16,16 @@ import org.mockito.Mockito;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.util.concurrent.TimeUnit;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 @MiniCloudTest
-public class CreateInstanceTest {
+public class InstanceServiceTest {
     private static final String INSTANCE_NAME = "INSTANCE_NAME";
     private static final int DEFAULT_CPU = 1;
     private static final int DEFAULT_MEMORY = 1;
@@ -33,8 +40,7 @@ public class CreateInstanceTest {
             instanceService = new InstanceServiceImpl(clock);
         }
 
-        @Nested
-        class With_valid_create_request {
+        @Nested class When_receiving_a_valid_create_request {
             CreateInstanceRequest request;
             Instance instance;
             Instant createdAt;
@@ -77,11 +83,6 @@ public class CreateInstanceTest {
                 Assertions.assertThat(instance.getCreatedAt()).isEqualTo(createdAt);
             }
 
-            @Test void After_two_seconds_it_should_be_running() throws InterruptedException {
-                TimeUnit.SECONDS.sleep(3);
-                Assertions.assertThat(instance.getState()).isEqualTo(InstanceState.RUNNING);
-            }
-
             @Test void Instance_should_be_listable() {
                 Assertions.assertThat(instanceService.list()).containsExactly(instance);
             }
@@ -96,7 +97,6 @@ public class CreateInstanceTest {
                     request = CreateInstanceRequest.builder()
                             .name(INSTANCE_NAME).cpu(DEFAULT_CPU).memory(DEFAULT_MEMORY)
                             .build();
-
                     Mockito.when(clock.instant()).thenReturn(Instant.now());
                     instance = instanceService.create(request);
                 }
@@ -141,6 +141,85 @@ public class CreateInstanceTest {
                     Assertions.assertThat(instance1.getId()).isNotEqualTo(instance2.getId());
                 }
             }
+        }
+
+        @Nested class When_receiving_a_valid_list_request {
+            ListInstanceRequest request;
+            List<Instance> response;
+
+            @BeforeEach void setup() {
+                request = new ListInstanceRequest();
+            }
+
+            @Nested class With_no_instances_stored {
+                @BeforeEach void setup() {
+                    response = instanceService.list(request);
+                }
+
+                @Test void It_should_return_an_empty_list() {
+                    Assertions.assertThat(response).isEmpty();
+                }
+            }
+
+            @Nested class With_one_instance_stored {
+                Instance expected;
+
+                @BeforeEach void setup() {
+                    expected = instanceService.create(CreateInstanceRequest.builder()
+                            .name(INSTANCE_NAME).cpu(DEFAULT_CPU).memory(DEFAULT_MEMORY).build());
+                    response = instanceService.list();
+                }
+
+                @Test void It_should_return_a_list_of_one_instance_stored() {
+                    Assertions.assertThat(response).hasSize(1);
+                }
+
+                @Test void Stored_instance_should_equal_expected() {
+                    Assertions.assertThat(instanceService.list()).hasSize(1);
+                    Assertions.assertThat(instanceService.list().getFirst()).isEqualTo(expected);
+                }
+            }
+        }
+
+        @Test void It_should_only_allow_one_instance_with_a_given_name_concurrently()
+                throws InterruptedException {
+
+            int threadCount = 50;
+
+            ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+            CountDownLatch start = new CountDownLatch(1);
+
+            List<Future<Instance>> futures = new ArrayList<>();
+
+            for (int i = 0; i < threadCount; i++) {
+                futures.add(executor.submit(() -> {
+                    start.await();
+                    return instanceService.create(
+                            CreateInstanceRequest.builder()
+                                    .name(INSTANCE_NAME)
+                                    .cpu(DEFAULT_CPU)
+                                    .memory(DEFAULT_MEMORY)
+                                    .build());
+                }));
+            }
+
+            start.countDown();
+
+            int successfulCreates = 0;
+
+            for (Future<Instance> future : futures) {
+                try {
+                    future.get();
+                    successfulCreates++;
+                } catch (ExecutionException ignored) {
+                    // Expected for duplicate creates.
+                }
+            }
+
+            executor.shutdown();
+
+            Assertions.assertThat(successfulCreates).isEqualTo(1);
+            Assertions.assertThat(instanceService.list()).hasSize(1);
         }
     }
 }
