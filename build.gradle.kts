@@ -5,6 +5,7 @@ plugins {
     idea
     jacoco
     checkstyle
+    id("io.freefair.lombok") version "9.5.0"
     id("com.gradleup.shadow") version "9.1.0"
     id("com.github.spotbugs") version "6.4.2"
 }
@@ -33,9 +34,10 @@ checkstyle {
     isIgnoreFailures = false
 }
 
+val mockitoAgent = configurations.create("mockitoAgent")
 dependencies {
     implementation("io.javalin:javalin:7.2.3")
-    implementation("com.google.dagger:dagger:2.51.1")
+    implementation("com.google.dagger:dagger:2.60.1")
     implementation("org.slf4j:slf4j-api:2.0.17")
     runtimeOnly("ch.qos.logback:logback-classic:1.5.18")
 
@@ -43,8 +45,16 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter")
     testImplementation("org.mockito:mockito-core:5.19.0")
     testImplementation("org.assertj:assertj-core:3.27.7")
+    testImplementation("org.mockito:mockito-junit-jupiter:5.12.0")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    mockitoAgent("org.mockito:mockito-core:5.19.0")  { isTransitive = false }
 
-    annotationProcessor("com.google.dagger:dagger-compiler:2.51.1")
+    annotationProcessor("com.google.dagger:dagger-compiler:2.60.1")
+}
+tasks {
+    test {
+        jvmArgs.add("-javaagent:${mockitoAgent.asPath}")
+    }
 }
 
 tasks.test {
@@ -55,4 +65,12 @@ tasks.named<ShadowJar>("shadowJar") {
     manifest {
         attributes["Main-Class"] = "jc121f1.Main"
     }
+}
+
+tasks.named<Checkstyle>("checkstyleMain") {
+    configFile = file("config/checkstyle/checkstyleMain.xml")
+}
+
+tasks.named<Checkstyle>("checkstyleTest") {
+    configFile = file("config/checkstyle/checkstyleTest.xml")
 }

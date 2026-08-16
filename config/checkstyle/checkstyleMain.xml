@@ -38,8 +38,6 @@
         <module name="NoWhitespaceBefore"/>
         <module name="NoWhitespaceAfter"/>
 
-        <module name="EmptyLineSeparator"/>
-
 
         <!-- ==================== -->
         <!-- Braces                -->
