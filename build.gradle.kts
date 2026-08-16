@@ -4,8 +4,12 @@ plugins {
     java
     idea
     jacoco
+    checkstyle
     id("com.gradleup.shadow") version "9.1.0"
+    id("com.github.spotbugs") version "6.4.2"
 }
+
+
 
 group = "jc121f1"
 version = "1.0-SNAPSHOT"
@@ -18,6 +22,15 @@ java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(25)
     }
+}
+
+spotbugs {
+    ignoreFailures = false
+}
+
+checkstyle {
+    toolVersion = "10.26.1"
+    isIgnoreFailures = false
 }
 
 dependencies {
