@@ -1,9 +1,25 @@
 package jc121f1.model.instance;
 
+import java.util.List;
+
 public enum InstanceState {
     STARTING,
     STOPPED,
     STOPPING,
     RUNNING,
-    MISSING
+    MISSING;
+
+    private static final List<InstanceState> STARTABLE_STATES = List.of(STOPPED);
+    private static final List<InstanceState> STOPPABLE_STATES = List.of(RUNNING);
+    public boolean isStartable() {
+        return STARTABLE_STATES.contains(this);
+    }
+
+    public boolean isStoppable() {
+        return STOPPABLE_STATES.contains(this);
+    }
+
+    public boolean isTransitioning() {
+        return STARTABLE_STATES.contains(this) || STOPPABLE_STATES.contains(this);
+    }
 }
