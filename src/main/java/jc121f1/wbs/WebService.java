@@ -37,7 +37,6 @@ public class WebService {
                     get(listInstanceHandler);
                     post(createInstanceHandler);
                     path("{instanceId}", () -> {
-                        get(getInstanceHandler);
                         delete(deleteInstanceHandler);
                         path("stop", () -> {
                             post(stopInstanceHandler);
@@ -45,6 +44,9 @@ public class WebService {
                         path("start", () -> {
                             post(startInstanceHandler);
                         });
+                    });
+                    path("describe", () -> {
+                        post(getInstanceHandler);
                     });
                 });
             });
