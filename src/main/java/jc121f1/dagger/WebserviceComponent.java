@@ -1,6 +1,7 @@
 package jc121f1.dagger;
 
 import dagger.Component;
+import jc121f1.services.instance.compute.ComputeBackend;
 import jc121f1.wbs.handlers.delete.DeleteInstanceHandler;
 import jc121f1.wbs.handlers.get.GetInstanceHandler;
 import jc121f1.wbs.handlers.get.ListInstanceHandler;
@@ -27,4 +28,6 @@ public interface WebserviceComponent {
     StopInstanceHandler stopInstanceHandler();
 
     StartInstanceHandler startInstanceHandler();
+
+    ComputeBackend computeBackend();
 }
