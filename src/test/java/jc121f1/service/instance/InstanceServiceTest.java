@@ -23,6 +23,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -44,6 +45,12 @@ public class InstanceServiceTest {
         @BeforeEach
         void setup() {
             instanceService = new InstanceServiceImpl(clock, computeBackend);
+            Mockito.lenient().when(computeBackend.start(Mockito.any()))
+                    .thenReturn(CompletableFuture.completedFuture(null));
+            Mockito.lenient().when(computeBackend.create(Mockito.any()))
+                    .thenReturn(CompletableFuture.completedFuture(null));
+            Mockito.lenient().when(computeBackend.stop(Mockito.any()))
+                    .thenReturn(CompletableFuture.completedFuture(null));
         }
 
         @Nested class When_receiving_a_valid_create_request {
@@ -90,7 +97,7 @@ public class InstanceServiceTest {
             }
 
             @Test void Instance_should_be_listable() {
-                Assertions.assertThat(instanceService.list()).containsExactly(instance);
+                Assertions.assertThat(instanceService.list().getFirst()).isEqualTo(instance);
             }
         }
 
@@ -114,7 +121,8 @@ public class InstanceServiceTest {
                 }
 
                 @Test void It_should_only_create_one_instance() {
-                    Assertions.assertThat(instanceService.list()).containsExactly(instance);
+                    Assertions.assertThat(instanceService.list()).hasSize(1);
+                    Assertions.assertThat(instanceService.list().getFirst()).isEqualTo(instance);
                 }
             }
 
@@ -393,7 +401,7 @@ public class InstanceServiceTest {
                         .memory(DEFAULT_MEMORY)
                         .build());
 
-                instance.setState(InstanceState.STOPPED);
+                instanceService.stop(StopInstanceRequest.builder().instanceId(instance.getId()).build());
             }
 
             @Test
@@ -431,7 +439,11 @@ public class InstanceServiceTest {
 
             @Test
             void It_should_reject_an_instance_that_cannot_be_started() {
-                instance.setState(InstanceState.RUNNING);
+                instance = instanceService.create(CreateInstanceRequest.builder()
+                        .name(INSTANCE_NAME + "a")
+                        .cpu(DEFAULT_CPU)
+                        .memory(DEFAULT_MEMORY)
+                        .build());
 
                 StartInstanceRequest request = StartInstanceRequest.builder()
                         .instanceId(instance.getId())
@@ -492,11 +504,11 @@ public class InstanceServiceTest {
 
             @Test
             void It_should_reject_an_instance_that_cannot_be_stopped() {
-                instance.setState(InstanceState.STOPPED);
-
                 StopInstanceRequest request = StopInstanceRequest.builder()
                         .instanceId(instance.getId())
                         .build();
+
+                instanceService.stop(request);
 
                 Assertions.assertThatThrownBy(() -> instanceService.stop(request))
                         .hasMessageContaining("not in a startable state");

@@ -73,10 +73,14 @@ public class InstanceServiceImpl implements InstanceService {
                 .createdAt(clock.instant())
                 .build();
 
+        Instance returnedInstance = createdInstance.toBuilder().build();
+
         instancesById.put(instanceId, createdInstance);
         idsByName.put(request.getName(), instanceId);
 
-        return createdInstance;
+        createInstance(createdInstance);
+        startInstance(createdInstance);
+        return returnedInstance;
     }
 
     @Override
@@ -132,8 +136,10 @@ public class InstanceServiceImpl implements InstanceService {
                     "Instance {" + identifier + "} is not in a startable state. " +
                             "Current state is {" + stop.getState() + "}");
         }
+        Instance copy = stop.toBuilder().build();
+        stopInstance(stop);
 
-        return stop;
+        return copy;
     }
 
     @Override
@@ -150,7 +156,6 @@ public class InstanceServiceImpl implements InstanceService {
             identifier = request.getName();
         }
         start = getByIdOrName(identifier);
-
         if (start.getState().isStartable()) {
             start.setState(InstanceState.STARTING);
         } else {
@@ -158,8 +163,9 @@ public class InstanceServiceImpl implements InstanceService {
                     "Instance {" + identifier + "} is not in a startable state. " +
                             "Current state is {" + start.getState() + "}");
         }
-
-        return start;
+        Instance copy = start.toBuilder().build();
+        startInstance(start);
+        return copy;
     }
 
     private Instance getByIdOrName(String identifier) {
@@ -167,5 +173,29 @@ public class InstanceServiceImpl implements InstanceService {
 
         return Optional.ofNullable(instancesById.get(id))
                 .orElseThrow(() -> new IllegalArgumentException("Resource not found"));
+    }
+
+    private void startInstance(Instance instance) {
+        computeBackend.start(instance)
+                .thenRun(() ->
+                        instance.setState(InstanceState.RUNNING))
+                .exceptionally(error -> {
+                    instance.setState(InstanceState.MISSING);
+                    return null;
+                });
+    }
+
+    private void createInstance(Instance instance) {
+        computeBackend.create(instance);
+    }
+
+    private void stopInstance(Instance instance) {
+        computeBackend.stop(instance)
+                .thenRun(() ->
+                        instance.setState(InstanceState.STOPPED))
+                .exceptionally(error -> {
+                    instance.setState(InstanceState.MISSING);
+                    return null;
+                });
     }
 }
