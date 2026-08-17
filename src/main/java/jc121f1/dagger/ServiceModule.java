@@ -14,7 +14,8 @@ import jc121f1.dagger.qualifiers.RegistryUser;
 import jc121f1.services.instance.compute.ComputeBackend;
 import jc121f1.services.instance.InstanceService;
 import jc121f1.services.instance.InstanceServiceImpl;
-import jc121f1.services.instance.compute.DockerComputeBackend;
+import jc121f1.services.instance.compute.docker.DockerComputeBackend;
+import jc121f1.services.instance.compute.docker.DockerEventListener;
 
 import javax.inject.Singleton;
 import java.time.Clock;
@@ -30,8 +31,8 @@ public class ServiceModule {
     }
 
     @Provides @Singleton
-    public ComputeBackend computeBackend(DockerClient dockerClient) {
-        return new DockerComputeBackend(dockerClient);
+    public ComputeBackend computeBackend(DockerClient dockerClient, DockerEventListener eventListener) {
+        return new DockerComputeBackend(dockerClient, eventListener);
     }
 
     @Provides @Singleton
@@ -45,9 +46,8 @@ public class ServiceModule {
                                      @RegistryMail String mail,
                                      @RegistryUrl String url) {
         DockerClientConfig config = DefaultDockerClientConfig.createDefaultConfigBuilder()
-                .withDockerHost("tcp://localhost:2375")
-                .withDockerTlsVerify(true)
-                .withDockerCertPath("/home/user/.docker")
+                .withDockerHost("npipe:////./pipe/dockerDesktopLinuxEngine")
+                .withDockerTlsVerify(false)
                 .withRegistryUsername(user)
                 .withRegistryPassword(pass)
                 .withRegistryEmail(mail)
@@ -63,5 +63,10 @@ public class ServiceModule {
                 .build();
 
         return DockerClientImpl.getInstance(config, client);
+    }
+
+    @Provides @Singleton
+    public DockerEventListener eventListener(DockerClient dockerClient) {
+        return new DockerEventListener(dockerClient);
     }
 }
