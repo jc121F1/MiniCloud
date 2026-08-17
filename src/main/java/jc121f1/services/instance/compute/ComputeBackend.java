@@ -4,7 +4,7 @@ import jc121f1.model.instance.dao.Instance;
 
 import java.util.concurrent.CompletableFuture;
 
-public interface ComputeBackend {
+public interface ComputeBackend extends AutoCloseable {
 
     CompletableFuture<Void> create(Instance instance);
 
