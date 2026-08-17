@@ -12,7 +12,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 
 @Getter
-@Builder
+@Builder(toBuilder = true)
 @EqualsAndHashCode(callSuper = false)
 public class Instance {
     private String name;
@@ -24,13 +24,19 @@ public class Instance {
     private String id;
 
     @Setter
+    @EqualsAndHashCode.Exclude
     private InstanceState state;
 
     @JsonIgnore
+    @EqualsAndHashCode.Exclude
     private Instant createdAt;
 
     @JsonProperty("createdAt")
     public String createdAtAsString() {
         return createdAt.truncatedTo(ChronoUnit.SECONDS).toString();
+    }
+
+    public long memoryInBytes() {
+        return (long) memory * 1024 * 1024;
     }
 }
