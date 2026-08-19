@@ -1,5 +1,6 @@
 package jc121f1.services.instance.events;
 
+import javax.inject.Inject;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -12,6 +13,7 @@ public final class SimpleEventBus implements EventBus {
     private final Executor executor;
     private final Map<Class<?>, List<Consumer<?>>> subscribers = new ConcurrentHashMap<>();
 
+    @Inject
     public SimpleEventBus(Executor executor) {
         this.executor = executor;
     }
