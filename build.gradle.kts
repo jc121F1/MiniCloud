@@ -82,7 +82,7 @@ tasks.jacocoTestReport {
 
 tasks.build {
     dependsOn(tasks.jacocoTestReport)
-
+    dependsOn(tasks.shadowJar)
     doLast {
         val report = tasks.jacocoTestReport
             .get()
