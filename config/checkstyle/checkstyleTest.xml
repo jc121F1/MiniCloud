@@ -65,5 +65,12 @@
         <module name="InnerAssignment"/>
         <module name="DeclarationOrder"/>
 
+        <module name="AvoidStaticImport">
+            <property name="excludes"
+                      value="org.assertj.core.api.Assertions.*"/>
+            <property name="excludes"
+                      value="org.mockito.*"/>
+        </module>
+
     </module>
 </module>
