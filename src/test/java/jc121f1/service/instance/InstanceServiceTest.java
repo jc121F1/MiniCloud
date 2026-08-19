@@ -2,12 +2,12 @@ package jc121f1.service.instance;
 
 import jc121f1.annotations.MiniCloudTest;
 import jc121f1.model.instance.InstanceState;
-import jc121f1.model.instance.api.CreateInstanceRequest;
-import jc121f1.model.instance.api.DeleteInstanceRequest;
-import jc121f1.model.instance.api.GetInstanceRequest;
-import jc121f1.model.instance.api.ListInstanceRequest;
-import jc121f1.model.instance.api.StartInstanceRequest;
-import jc121f1.model.instance.api.StopInstanceRequest;
+import jc121f1.model.instance.api.request.CreateInstanceRequest;
+import jc121f1.model.instance.api.request.DeleteInstanceRequest;
+import jc121f1.model.instance.api.request.GetInstanceRequest;
+import jc121f1.model.instance.api.request.ListInstanceRequest;
+import jc121f1.model.instance.api.request.StartInstanceRequest;
+import jc121f1.model.instance.api.request.StopInstanceRequest;
 import jc121f1.model.instance.dao.Instance;
 import jc121f1.services.instance.compute.ComputeBackend;
 import jc121f1.services.instance.InstanceService;

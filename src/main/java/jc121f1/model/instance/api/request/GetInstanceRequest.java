@@ -1,4 +1,4 @@
-package jc121f1.model.instance.api;
+package jc121f1.model.instance.api.request;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -11,7 +11,7 @@ import javax.annotation.Nullable;
 @NoArgsConstructor
 @AllArgsConstructor
 @Getter
-public class StartInstanceRequest {
+public class GetInstanceRequest {
     @Nullable
     private String instanceId;
     @Nullable
