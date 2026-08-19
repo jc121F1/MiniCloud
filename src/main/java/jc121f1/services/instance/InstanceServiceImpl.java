@@ -88,8 +88,7 @@ public class InstanceServiceImpl implements InstanceService {
         return list();
     }
 
-    @Override
-    public synchronized List<Instance> list() {
+    private synchronized List<Instance> list() {
         return List.copyOf(instancesById.values());
     }
 

@@ -17,8 +17,6 @@ public interface InstanceService {
 
     List<Instance> list(ListInstanceRequest request);
 
-    List<Instance> list();
-
     Instance delete(DeleteInstanceRequest request);
 
     Instance stop(StopInstanceRequest request);

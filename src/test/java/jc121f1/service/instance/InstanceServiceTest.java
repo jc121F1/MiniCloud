@@ -97,7 +97,7 @@ public class InstanceServiceTest {
             }
 
             @Test void Instance_should_be_listable() {
-                Assertions.assertThat(instanceService.list().getFirst()).isEqualTo(instance);
+                Assertions.assertThat(instanceService.list(new ListInstanceRequest()).getFirst()).isEqualTo(instance);
             }
         }
 
@@ -121,8 +121,8 @@ public class InstanceServiceTest {
                 }
 
                 @Test void It_should_only_create_one_instance() {
-                    Assertions.assertThat(instanceService.list()).hasSize(1);
-                    Assertions.assertThat(instanceService.list().getFirst()).isEqualTo(instance);
+                    Assertions.assertThat(instanceService.list(new ListInstanceRequest())).hasSize(1);
+                    Assertions.assertThat(instanceService.list(new ListInstanceRequest()).getFirst()).isEqualTo(instance);
                 }
             }
 
@@ -181,7 +181,7 @@ public class InstanceServiceTest {
                 @BeforeEach void setup() {
                     expected = instanceService.create(CreateInstanceRequest.builder()
                             .name(INSTANCE_NAME).cpu(DEFAULT_CPU).memory(DEFAULT_MEMORY).build());
-                    response = instanceService.list();
+                    response = instanceService.list(new ListInstanceRequest());
                 }
 
                 @Test void It_should_return_a_list_of_one_instance_stored() {
@@ -189,8 +189,8 @@ public class InstanceServiceTest {
                 }
 
                 @Test void Stored_instance_should_equal_expected() {
-                    Assertions.assertThat(instanceService.list()).hasSize(1);
-                    Assertions.assertThat(instanceService.list().getFirst()).isEqualTo(expected);
+                    Assertions.assertThat(instanceService.list(new ListInstanceRequest())).hasSize(1);
+                    Assertions.assertThat(instanceService.list(new ListInstanceRequest()).getFirst()).isEqualTo(expected);
                 }
             }
         }
@@ -302,7 +302,7 @@ public class InstanceServiceTest {
 
                 @Test
                 void Instance_should_no_longer_be_listable() {
-                    Assertions.assertThat(instanceService.list()).isEmpty();
+                    Assertions.assertThat(instanceService.list(new ListInstanceRequest())).isEmpty();
                 }
 
                 @Test
@@ -344,7 +344,7 @@ public class InstanceServiceTest {
 
                 @Test
                 void Instance_should_no_longer_be_listable() {
-                    Assertions.assertThat(instanceService.list()).isEmpty();
+                    Assertions.assertThat(instanceService.list(new ListInstanceRequest())).isEmpty();
                 }
 
                 @Test
@@ -563,7 +563,7 @@ public class InstanceServiceTest {
             executor.shutdown();
 
             Assertions.assertThat(successfulCreates).isEqualTo(1);
-            Assertions.assertThat(instanceService.list()).hasSize(1);
+            Assertions.assertThat(instanceService.list(new ListInstanceRequest())).hasSize(1);
         }
     }
 }
