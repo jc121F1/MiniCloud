@@ -219,7 +219,7 @@ public class InstanceServiceImpl implements InstanceService {
         Optional<Instance> optionalInstance = Optional.ofNullable(instancesById.get(event.instanceId()));
         if (Objects.requireNonNull(event.action()) == EventAction.UNHEALTHY) {
             optionalInstance.ifPresent(instance -> {
-                if (instance.getState().isTerminal()) {
+                if (!instance.getState().isTerminal()) {
                     instancesById.put(instance.getId(), instance.toBuilder().state(InstanceState.MISSING).build());
                 }
             });

@@ -12,13 +12,18 @@ import jc121f1.model.instance.dao.Instance;
 import jc121f1.services.instance.compute.ComputeBackend;
 import jc121f1.services.instance.InstanceService;
 import jc121f1.services.instance.InstanceServiceImpl;
+import jc121f1.services.instance.compute.docker.EventAction;
 import jc121f1.services.instance.events.EventBus;
+import jc121f1.services.instance.events.InstanceHealthEvent;
+import jc121f1.services.instance.events.SimpleEventBus;
 import org.assertj.core.api.Assertions;
+import org.awaitility.Awaitility;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.Mockito;
+import org.mockito.Spy;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -39,7 +44,7 @@ public class InstanceServiceTest {
 
     @Mock private Clock clock;
     @Mock private ComputeBackend computeBackend;
-    @Mock private EventBus eventBus;
+    @Spy private EventBus eventBus = new SimpleEventBus(Executors.newVirtualThreadPerTaskExecutor());
 
     @Nested class Given_an_instance_service {
         InstanceService instanceService;
@@ -566,6 +571,43 @@ public class InstanceServiceTest {
 
             Assertions.assertThat(successfulCreates).isEqualTo(1);
             Assertions.assertThat(instanceService.list(new ListInstanceRequest())).hasSize(1);
+        }
+
+        @Nested class When_listening_for_events {
+
+            @Test void Instance_service_should_subscribe_to_event_bus_for_instance_health_event() {
+                Mockito.verify(eventBus).subscribe(Mockito.eq(InstanceHealthEvent.class), Mockito.any());
+            }
+
+            @Nested class And_an_instance_unhealthy_event_is_received {
+                Instance instanceBefore;
+                Instance instanceAfter;
+                @BeforeEach
+                void setup() {
+                    instanceBefore =  instanceService.create(CreateInstanceRequest.builder()
+                            .name(INSTANCE_NAME)
+                            .cpu(DEFAULT_CPU)
+                            .memory(DEFAULT_MEMORY)
+                            .build());
+
+                    eventBus.publish(new InstanceHealthEvent(instanceBefore.getId(), EventAction.UNHEALTHY));
+
+                    Awaitility.await()
+                            .untilAsserted(() -> {
+                                instanceAfter = instanceService.get(
+                                        GetInstanceRequest.builder()
+                                                .instanceId(instanceBefore.getId())
+                                                .build());
+
+                                Assertions.assertThat(instanceAfter.getState())
+                                        .isEqualTo(InstanceState.MISSING);
+                            });
+                }
+
+                @Test void Instance_should_be_marked_missing() {
+                    Assertions.assertThat(instanceAfter.getState()).isEqualTo(InstanceState.MISSING);
+                }
+            }
         }
     }
 }
