@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
 import io.javalin.Javalin;
 import io.javalin.testtools.JavalinTest;
+import jc121f1.annotations.MiniCloudTest;
 import jc121f1.dagger.WebserviceHandlers;
 import jc121f1.integration.testdagger.DaggerTestWebserviceComponent;
 import jc121f1.model.instance.dao.Instance;
@@ -20,6 +21,7 @@ import org.mockito.Mockito;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
+@MiniCloudTest
 class InstanceApiIntegrationTest {
 
     private ComputeBackend computeBackend;
@@ -36,9 +38,6 @@ class InstanceApiIntegrationTest {
                 .thenReturn(CompletableFuture.completedFuture(null));
 
         Mockito.when(computeBackend.start(ArgumentMatchers.any(Instance.class)))
-                .thenReturn(CompletableFuture.completedFuture(null));
-
-        Mockito.when(computeBackend.stop(ArgumentMatchers.any(Instance.class)))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
         app = WebService.create(component);
@@ -59,12 +58,12 @@ class InstanceApiIntegrationTest {
                 var response = client.post(
                         "/instances",
                         """
-                        {
-                            "name": "test-instance",
-                            "cpu": 2,
-                            "memory": 1024
-                        }
-                        """
+                                {
+                                    "name": "test-instance",
+                                    "cpu": 2,
+                                    "memory": 1024
+                                }
+                                """
                 );
 
                 Assertions.assertThat(response.code())
@@ -94,7 +93,7 @@ class InstanceApiIntegrationTest {
                 Mockito.verify(computeBackend)
                         .start(ArgumentMatchers.any(Instance.class));
             });
-        };
+        }
     }
 
     @Nested
@@ -107,12 +106,12 @@ class InstanceApiIntegrationTest {
                 client.post(
                         "/instances",
                         """
-                        {
-                            "name": "test-instance",
-                            "cpu": 2,
-                            "memory": 1024
-                        }
-                        """
+                                {
+                                    "name": "test-instance",
+                                    "cpu": 2,
+                                    "memory": 1024
+                                }
+                                """
                 );
 
                 var response = client.get("/instances");
