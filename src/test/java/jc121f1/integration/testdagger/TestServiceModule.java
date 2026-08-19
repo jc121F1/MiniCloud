@@ -5,6 +5,7 @@ import dagger.Provides;
 import jc121f1.services.instance.InstanceService;
 import jc121f1.services.instance.InstanceServiceImpl;
 import jc121f1.services.instance.compute.ComputeBackend;
+import jc121f1.services.instance.events.EventBus;
 import org.assertj.core.util.VisibleForTesting;
 import org.mockito.Mockito;
 
@@ -34,10 +35,16 @@ public class TestServiceModule {
 
     @Provides
     @Singleton
+    EventBus eventBus() {
+        return Mockito.mock(EventBus.class);
+    }
+
+    @Provides
+    @Singleton
     InstanceService instanceService(
             Clock clock,
             ComputeBackend computeBackend) {
 
-        return new InstanceServiceImpl(clock, computeBackend);
+        return new InstanceServiceImpl(clock, computeBackend, eventBus());
     }
 }

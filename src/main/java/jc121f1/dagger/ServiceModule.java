@@ -5,6 +5,7 @@ import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientConfig;
 import com.github.dockerjava.core.DockerClientImpl;
 import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
+import dagger.Binds;
 import dagger.Module;
 import dagger.Provides;
 import jc121f1.dagger.qualifiers.RegistryMail;
@@ -16,32 +17,32 @@ import jc121f1.services.instance.InstanceService;
 import jc121f1.services.instance.InstanceServiceImpl;
 import jc121f1.services.instance.compute.docker.DockerComputeBackend;
 import jc121f1.services.instance.compute.docker.DockerEventListener;
+import jc121f1.services.instance.events.EventBus;
+import jc121f1.services.instance.events.SimpleEventBus;
 
 import javax.inject.Singleton;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 @Module
-public class ServiceModule {
+public abstract class ServiceModule {
+
+    @Binds @Singleton
+    public abstract InstanceService instanceService(InstanceServiceImpl  instanceService);
+
+    @Binds @Singleton
+    public abstract ComputeBackend computeBackend(DockerComputeBackend dockerComputeBackend);
 
     @Provides @Singleton
-    public InstanceService instanceService(Clock clock, ComputeBackend computeBackend) {
-        return new InstanceServiceImpl(clock, computeBackend);
-    }
-
-    @Provides @Singleton
-    public ComputeBackend computeBackend(DockerClient dockerClient, DockerEventListener eventListener) {
-        return new DockerComputeBackend(dockerClient, eventListener);
-    }
-
-    @Provides @Singleton
-    public Clock clock() {
+    public static Clock clock() {
         return Clock.systemUTC();
     }
 
     @Provides @Singleton
-    public DockerClient dockerClient(@RegistryUser String user,
+    public static DockerClient dockerClient(@RegistryUser String user,
                                      @RegistryPass String pass,
                                      @RegistryMail String mail,
                                      @RegistryUrl String url) {
@@ -66,7 +67,15 @@ public class ServiceModule {
     }
 
     @Provides @Singleton
-    public DockerEventListener eventListener(DockerClient dockerClient) {
+    public static DockerEventListener eventListener(DockerClient dockerClient) {
         return new DockerEventListener(dockerClient);
+    }
+
+    @Binds @Singleton
+    public abstract EventBus eventBus(SimpleEventBus eventBus);
+
+    @Provides
+    public static Executor executor() {
+        return Executors.newVirtualThreadPerTaskExecutor();
     }
 }
