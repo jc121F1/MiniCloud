@@ -13,7 +13,6 @@ import jc121f1.wbs.handlers.post.StartInstanceHandler;
 import jc121f1.wbs.handlers.post.StopInstanceHandler;
 import lombok.extern.slf4j.Slf4j;
 
-import static io.javalin.apibuilder.ApiBuilder.delete;
 import static io.javalin.apibuilder.ApiBuilder.get;
 import static io.javalin.apibuilder.ApiBuilder.path;
 import static io.javalin.apibuilder.ApiBuilder.post;
@@ -37,7 +36,7 @@ public class WebService {
                 path("instances", () -> {
                     get(listInstanceHandler);
                     post(createInstanceHandler);
-                    delete("delete", deleteInstanceHandler);
+                    post("delete", deleteInstanceHandler);
                     post("stop", stopInstanceHandler);
                     post("start", startInstanceHandler);
                     post("describe", getInstanceHandler);
