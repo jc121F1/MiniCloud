@@ -11,6 +11,7 @@ public enum InstanceState {
 
     private static final List<InstanceState> STARTABLE_STATES = List.of(STOPPED);
     private static final List<InstanceState> STOPPABLE_STATES = List.of(RUNNING);
+    private static final List<InstanceState> TERMINAL_STATES = List.of(STOPPING, STOPPED, MISSING);
     public boolean isStartable() {
         return STARTABLE_STATES.contains(this);
     }
@@ -21,5 +22,9 @@ public enum InstanceState {
 
     public boolean isTransitioning() {
         return STARTABLE_STATES.contains(this) || STOPPABLE_STATES.contains(this);
+    }
+
+    public boolean isTerminal() {
+        return TERMINAL_STATES.contains(this);
     }
 }

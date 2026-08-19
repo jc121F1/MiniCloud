@@ -10,13 +10,16 @@ import jc121f1.model.instance.api.request.StartInstanceRequest;
 import jc121f1.model.instance.api.request.StopInstanceRequest;
 import jc121f1.model.instance.dao.Instance;
 import jc121f1.services.instance.compute.ComputeBackend;
+import jc121f1.services.instance.compute.docker.EventAction;
 import jc121f1.services.instance.events.EventBus;
+import jc121f1.services.instance.events.InstanceHealthEvent;
 
 import javax.inject.Inject;
 import java.time.Clock;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -40,6 +43,12 @@ public class InstanceServiceImpl implements InstanceService {
         this.clock = clock;
         this.computeBackend = computeBackend;
         this.eventBus = eventBus;
+
+        this.registerHealthEvents();
+    }
+
+    private void registerHealthEvents() {
+        eventBus.subscribe(InstanceHealthEvent.class, this::handleHealthEvent);
     }
 
     @Override
@@ -204,5 +213,16 @@ public class InstanceServiceImpl implements InstanceService {
                     instance.setState(InstanceState.MISSING);
                     return null;
                 });
+    }
+
+    private synchronized void handleHealthEvent(InstanceHealthEvent event) {
+        Optional<Instance> optionalInstance = Optional.ofNullable(instancesById.get(event.instanceId()));
+        if (Objects.requireNonNull(event.action()) == EventAction.UNHEALTHY) {
+            optionalInstance.ifPresent(instance -> {
+                if (instance.getState().isTerminal()) {
+                    instancesById.put(instance.getId(), instance.toBuilder().state(InstanceState.MISSING).build());
+                }
+            });
+        }
     }
 }
