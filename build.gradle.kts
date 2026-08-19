@@ -48,9 +48,11 @@ dependencies {
     testImplementation("org.assertj:assertj-core:3.27.7")
     testImplementation("org.mockito:mockito-junit-jupiter:5.12.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testImplementation("io.javalin:javalin-testtools:7.2.3")
     mockitoAgent("org.mockito:mockito-core:5.19.0")  { isTransitive = false }
 
     annotationProcessor("com.google.dagger:dagger-compiler:2.60.1")
+    testAnnotationProcessor("com.google.dagger:dagger-compiler:2.57.2")
 }
 tasks {
     test {

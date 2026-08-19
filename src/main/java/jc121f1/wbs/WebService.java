@@ -3,7 +3,7 @@ package jc121f1.wbs;
 import io.javalin.Javalin;
 import jc121f1.dagger.DaggerWebserviceComponent;
 import jc121f1.dagger.WebserviceComponent;
-import jc121f1.services.instance.compute.ComputeBackend;
+import jc121f1.dagger.WebserviceHandlers;
 import jc121f1.wbs.handlers.delete.DeleteInstanceHandler;
 import jc121f1.wbs.handlers.get.GetInstanceHandler;
 import jc121f1.wbs.handlers.get.ListInstanceHandler;
@@ -20,53 +20,36 @@ import static io.javalin.apibuilder.ApiBuilder.post;
 
 @Slf4j
 public class WebService {
-    private static Javalin app;
 
-    public static void start() {
-        WebserviceComponent wbsComponent = DaggerWebserviceComponent.create();
-        RootHandler rootHandler = wbsComponent.rootHandler();
+    public static Javalin create(WebserviceHandlers component) {
+        RootHandler rootHandler = component.rootHandler();
+        GetInstanceHandler getInstanceHandler = component.getInstanceHandler();
+        ListInstanceHandler listInstanceHandler = component.listInstanceHandler();
+        CreateInstanceHandler createInstanceHandler = component.createInstanceHandler();
+        DeleteInstanceHandler deleteInstanceHandler = component.deleteInstanceHandler();
+        StopInstanceHandler stopInstanceHandler = component.stopInstanceHandler();
+        StartInstanceHandler startInstanceHandler = component.startInstanceHandler();
 
-        GetInstanceHandler getInstanceHandler = wbsComponent.getInstanceHandler();
-        ListInstanceHandler listInstanceHandler = wbsComponent.listInstanceHandler();
-        CreateInstanceHandler createInstanceHandler = wbsComponent.createInstanceHandler();
-        DeleteInstanceHandler deleteInstanceHandler = wbsComponent.deleteInstanceHandler();
-        StopInstanceHandler stopInstanceHandler = wbsComponent.stopInstanceHandler();
-        StartInstanceHandler startInstanceHandler = wbsComponent.startInstanceHandler();
-        ComputeBackend computeBackend = wbsComponent.computeBackend();
-
-        app = Javalin.create(config -> {
+        return Javalin.create(config -> {
             config.routes.apiBuilder(() -> {
                 get(rootHandler);
+
                 path("instances", () -> {
                     get(listInstanceHandler);
                     post(createInstanceHandler);
                     delete("delete", deleteInstanceHandler);
                     post("stop", stopInstanceHandler);
-                        post("start", startInstanceHandler);
-                    path("describe", () -> {
-                        post(getInstanceHandler);
-                    });
+                    post("start", startInstanceHandler);
+                    post("describe", getInstanceHandler);
                 });
             });
         });
+    }
 
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            log.warn("Shutdown hook running");
+    public static void start() {
+        WebserviceComponent component =
+                DaggerWebserviceComponent.create();
 
-            try {
-                computeBackend.close();
-                log.warn("Compute backend closed");
-            } catch (Exception e) {
-                log.error("Failed to close compute backend", e);
-            }
-
-            try {
-                app.stop();
-                log.warn("Webservice stopped");
-            } catch (Exception e) {
-                log.error("Failed to stop webservice", e);
-            }
-        }));
-        app.start(7070);
+        create(component).start(7070);
     }
 }
