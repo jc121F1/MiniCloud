@@ -64,8 +64,7 @@ public class DockerComputeBackend implements ComputeBackend {
         CompletableFuture<Event> future =
                 eventListener.waitFor(containerId, EventAction.START);
 
-        CompletableFuture<Event> futureHealth =
-                eventListener.waitFor(containerId, EventAction.UNHEALTHY);
+        eventListener.waitFor(containerId, EventAction.UNHEALTHY);
 
         try {
             dockerClient.startContainerCmd(containerId).exec();
