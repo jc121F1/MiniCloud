@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 public class InstanceServiceImpl implements InstanceService {
     private final Map<String, Instance> instancesById = new HashMap<>();
@@ -83,8 +84,9 @@ public class InstanceServiceImpl implements InstanceService {
         instancesById.put(instanceId, createdInstance);
         idsByName.put(request.getName(), instanceId);
 
-        createInstance(createdInstance);
-        startInstance(createdInstance);
+        createInstance(createdInstance)
+                .thenRun(() -> startInstance(createdInstance));
+
         return returnedInstance;
     }
 
@@ -112,6 +114,7 @@ public class InstanceServiceImpl implements InstanceService {
         }
         remove = getByIdOrName(identifier);
 
+        computeBackend.delete(remove);
         instancesById.remove(remove.getId());
         idsByName.remove(remove.getName());
 
@@ -189,8 +192,8 @@ public class InstanceServiceImpl implements InstanceService {
                 });
     }
 
-    private void createInstance(Instance instance) {
-        computeBackend.create(instance);
+    private CompletableFuture<Void> createInstance(Instance instance) {
+        return computeBackend.create(instance);
     }
 
     private void stopInstance(Instance instance) {

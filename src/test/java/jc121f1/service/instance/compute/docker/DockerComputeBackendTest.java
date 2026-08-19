@@ -10,6 +10,7 @@ import com.github.dockerjava.api.model.Event;
 import com.github.dockerjava.api.model.HostConfig;
 import jc121f1.annotations.MiniCloudTest;
 import jc121f1.model.instance.dao.Instance;
+import jc121f1.services.instance.events.EventBus;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -18,6 +19,8 @@ import org.mockito.Mock;
 import org.mockito.Mockito;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 @MiniCloudTest
 public class DockerComputeBackendTest {
@@ -51,13 +54,21 @@ public class DockerComputeBackendTest {
     @Mock
     private RemoveContainerCmd removeContainerCmd;
 
+    @Mock
+    private EventBus eventBus;
+
+    private Executor executor;
+
     private DockerComputeBackend computeBackend;
 
     @BeforeEach
     void setup() {
+        executor = Executors.newVirtualThreadPerTaskExecutor();
         computeBackend = new DockerComputeBackend(
                 dockerClient,
-                eventListener
+                eventListener,
+                eventBus,
+                executor
         );
 
         Mockito.when(instance.getId()).thenReturn(INSTANCE_ID);
@@ -88,7 +99,7 @@ public class DockerComputeBackendTest {
 
         @Test
         void It_should_create_a_container() {
-            computeBackend.create(instance);
+            computeBackend.create(instance).join();
 
             Mockito.verify(dockerClient)
                     .createContainerCmd("jc121f1/alpine");
@@ -98,34 +109,15 @@ public class DockerComputeBackendTest {
 
         @Test
         void It_should_create_the_container_with_the_instance_name() {
-            computeBackend.create(instance);
+            computeBackend.create(instance).join();
 
             Mockito.verify(createContainerCmd)
                     .withName("MiniCloud-" + INSTANCE_ID);
         }
 
         @Test
-        void It_should_store_the_container_id() {
-            computeBackend.create(instance);
-
-            CompletableFuture<Event> eventFuture =
-                    new CompletableFuture<>();
-
-            Mockito.when(eventListener.waitFor(
-                    CONTAINER_ID,
-                    EventAction.START
-            )).thenReturn(eventFuture);
-
-            computeBackend.start(instance);
-
-            Mockito.verify(eventListener)
-                    .waitFor(CONTAINER_ID, EventAction.START);
-        }
-
-        @Test
         void It_should_complete_successfully() {
-            Assertions.assertThat(computeBackend.create(instance))
-                    .isCompletedWithValue(null);
+            Assertions.assertThat(computeBackend.create(instance).join()).isNull();
         }
     }
 
@@ -153,7 +145,7 @@ public class DockerComputeBackendTest {
 
         @Test
         void It_should_wait_for_a_start_event() {
-            computeBackend.start(instance);
+            computeBackend.start(instance).join();
 
             Mockito.verify(eventListener)
                     .waitFor(CONTAINER_ID, EventAction.START);
@@ -161,7 +153,7 @@ public class DockerComputeBackendTest {
 
         @Test
         void It_should_start_the_container() {
-            computeBackend.start(instance);
+            computeBackend.start(instance).join();
 
             Mockito.verify(dockerClient)
                     .startContainerCmd(CONTAINER_ID);
@@ -171,8 +163,8 @@ public class DockerComputeBackendTest {
 
         @Test
         void It_should_complete_when_the_start_event_is_received() {
-            Assertions.assertThat(computeBackend.start(instance))
-                    .isCompletedWithValue(null);
+            Assertions.assertThat(computeBackend.start(instance).join())
+                    .isNull();
         }
 
         @Test
@@ -188,8 +180,8 @@ public class DockerComputeBackendTest {
                     EventAction.START
             )).thenReturn(failedFuture);
 
-            Assertions.assertThat(computeBackend.start(instance))
-                    .isCompletedExceptionally();
+            Assertions.assertThatThrownBy(() -> computeBackend.start(instance).join())
+                    .isInstanceOf(RuntimeException.class);
         }
     }
 
@@ -217,7 +209,7 @@ public class DockerComputeBackendTest {
 
         @Test
         void It_should_wait_for_a_die_event() {
-            computeBackend.stop(instance);
+            computeBackend.stop(instance).join();
 
             Mockito.verify(eventListener)
                     .waitFor(CONTAINER_ID, EventAction.DIE);
@@ -225,7 +217,7 @@ public class DockerComputeBackendTest {
 
         @Test
         void It_should_stop_the_container() {
-            computeBackend.stop(instance);
+            computeBackend.stop(instance).join();
 
             Mockito.verify(dockerClient)
                     .stopContainerCmd(CONTAINER_ID);
@@ -235,8 +227,8 @@ public class DockerComputeBackendTest {
 
         @Test
         void It_should_complete_when_the_die_event_is_received() {
-            Assertions.assertThat(computeBackend.stop(instance))
-                    .isCompletedWithValue(null);
+            Assertions.assertThat(computeBackend.stop(instance).join())
+                    .isNull();
         }
 
         @Test
@@ -252,8 +244,7 @@ public class DockerComputeBackendTest {
                     EventAction.DIE
             )).thenReturn(failedFuture);
 
-            Assertions.assertThat(computeBackend.stop(instance))
-                    .isCompletedExceptionally();
+            Assertions.assertThatThrownBy(() -> computeBackend.stop(instance).join());
         }
     }
 
@@ -270,7 +261,7 @@ public class DockerComputeBackendTest {
 
         @Test
         void It_should_remove_the_container() {
-            computeBackend.delete(instance);
+            computeBackend.delete(instance).join();
 
             Mockito.verify(dockerClient)
                     .removeContainerCmd(CONTAINER_ID);
@@ -280,16 +271,16 @@ public class DockerComputeBackendTest {
 
         @Test
         void It_should_complete_successfully() {
-            Assertions.assertThat(computeBackend.delete(instance))
-                    .isCompletedWithValue(null);
+            Assertions.assertThat(computeBackend.delete(instance).join())
+                    .isNull();
         }
 
         @Test
         void It_should_no_longer_have_a_container_for_the_instance() {
-            computeBackend.delete(instance);
+            computeBackend.delete(instance).join();
 
             Assertions.assertThatThrownBy(
-                    () -> computeBackend.start(instance)
+                    () -> computeBackend.start(instance).join()
             ).hasMessageContaining("No Docker container exists");
         }
     }
@@ -300,21 +291,21 @@ public class DockerComputeBackendTest {
         @Test
         void Start_should_throw() {
             Assertions.assertThatThrownBy(
-                    () -> computeBackend.start(instance)
+                    () -> computeBackend.start(instance).join()
             ).hasMessageContaining("No Docker container exists");
         }
 
         @Test
         void Stop_should_throw() {
             Assertions.assertThatThrownBy(
-                    () -> computeBackend.stop(instance)
+                    () -> computeBackend.stop(instance).join()
             ).hasMessageContaining("No Docker container exists");
         }
 
         @Test
         void Delete_should_throw() {
             Assertions.assertThatThrownBy(
-                    () -> computeBackend.delete(instance)
+                    () -> computeBackend.delete(instance).join()
             ).hasMessageContaining("No Docker container exists");
         }
     }
@@ -371,6 +362,6 @@ public class DockerComputeBackendTest {
         Mockito.when(createContainerResponse.getId())
                 .thenReturn(CONTAINER_ID);
 
-        computeBackend.create(instance);
+        computeBackend.create(instance).join();
     }
 }

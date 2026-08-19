@@ -8,12 +8,13 @@ import com.github.dockerjava.api.model.HostConfig;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import jc121f1.model.instance.dao.Instance;
 import jc121f1.services.instance.compute.ComputeBackend;
+import jc121f1.services.instance.events.EventBus;
 
 import javax.inject.Inject;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-
+import java.util.concurrent.Executor;
 public class DockerComputeBackend implements ComputeBackend {
 
     private final Map<String, String> instanceToContainer =
@@ -25,81 +26,88 @@ public class DockerComputeBackend implements ComputeBackend {
     )
     private final DockerClient dockerClient;
 
+    private final EventBus eventBus;
+
     private final DockerEventListener eventListener;
+
+    private final Executor computeExecutor;
 
     @Inject
     public DockerComputeBackend(
             DockerClient dockerClient,
-            DockerEventListener eventListener
+            DockerEventListener eventListener,
+            EventBus eventBus,
+            Executor executor
     ) {
         this.dockerClient = dockerClient;
         this.eventListener = eventListener;
+        this.eventBus = eventBus;
+        this.computeExecutor = executor;
     }
 
     @Override
     public CompletableFuture<Void> create(Instance instance) {
-        CreateContainerCmd createCommand = dockerClient
-                .createContainerCmd("jc121f1/alpine")
-                .withHostConfig(
-                        HostConfig.newHostConfig()
-                                .withCpuCount((long) instance.getCpu())
-                                .withMemory(instance.memoryInBytes())
-                )
-                .withName("MiniCloud-" + instance.getId());
+        return CompletableFuture.runAsync(() -> {
+            CreateContainerCmd createCommand = dockerClient
+                    .createContainerCmd("jc121f1/alpine")
+                    .withHostConfig(
+                            HostConfig.newHostConfig()
+                                    .withCpuCount((long) instance.getCpu())
+                                    .withMemory(instance.memoryInBytes())
+                    )
+                    .withName("MiniCloud-" + instance.getId());
 
-        CreateContainerResponse response = createCommand.exec();
+            CreateContainerResponse response = createCommand.exec();
 
-        instanceToContainer.put(
-                instance.getId(),
-                response.getId()
-        );
-
-        return CompletableFuture.completedFuture(null);
+            instanceToContainer.put(
+                    instance.getId(),
+                    response.getId()
+            );
+        }, computeExecutor);
     }
 
     @Override
     public CompletableFuture<Void> start(Instance instance) {
         String containerId = getContainerId(instance);
 
-        CompletableFuture<Event> future =
+        CompletableFuture<Event> startFuture =
                 eventListener.waitFor(containerId, EventAction.START);
 
-        eventListener.waitFor(containerId, EventAction.UNHEALTHY);
+        CompletableFuture<Void> startCommand = CompletableFuture.runAsync(() -> {
+            try {
+                dockerClient.startContainerCmd(containerId).exec();
+            } catch (Exception e) {
+                startFuture.completeExceptionally(e);
+            }
+        });
 
-        try {
-            dockerClient.startContainerCmd(containerId).exec();
-        } catch (Exception e) {
-            future.completeExceptionally(e);
-        }
-
-        return future.thenApply(event -> null);
+        return startCommand.thenCompose(ignored -> startFuture)
+                .thenApply(event -> null);
     }
 
     @Override
     public CompletableFuture<Void> stop(Instance instance) {
         String containerId = getContainerId(instance);
 
-        CompletableFuture<Event> future =
+        CompletableFuture<Event> stopped =
                 eventListener.waitFor(containerId, EventAction.DIE);
 
-        try {
-            dockerClient.stopContainerCmd(containerId).exec();
-        } catch (Exception e) {
-            future.completeExceptionally(e);
-        }
+        CompletableFuture<Void> command = CompletableFuture.runAsync(() ->
+                dockerClient.stopContainerCmd(containerId).exec());
 
-        return future.thenApply(event -> null);
+        return command.thenCompose(ignored ->
+                stopped.thenApply(ignoredEvent -> null));
     }
 
     @Override
     public CompletableFuture<Void> delete(Instance instance) {
         String containerId = getContainerId(instance);
 
-        dockerClient.removeContainerCmd(containerId).exec();
+        return CompletableFuture.runAsync(() -> {
+            dockerClient.removeContainerCmd(containerId).exec();
 
-        instanceToContainer.remove(instance.getId());
-
-        return CompletableFuture.completedFuture(null);
+            instanceToContainer.remove(instance.getId());
+        });
     }
 
     @Override
