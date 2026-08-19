@@ -10,6 +10,7 @@ import jc121f1.model.instance.api.request.StartInstanceRequest;
 import jc121f1.model.instance.api.request.StopInstanceRequest;
 import jc121f1.model.instance.dao.Instance;
 import jc121f1.services.instance.compute.ComputeBackend;
+import jc121f1.services.instance.events.EventBus;
 
 import javax.inject.Inject;
 import java.time.Clock;
@@ -22,6 +23,7 @@ import java.util.UUID;
 public class InstanceServiceImpl implements InstanceService {
     private final Map<String, Instance> instancesById = new HashMap<>();
     private final Map<String, String> idsByName = new HashMap<>();
+
     private final Clock clock;
 
     @SuppressFBWarnings(
@@ -30,10 +32,13 @@ public class InstanceServiceImpl implements InstanceService {
     )
     private final ComputeBackend computeBackend;
 
+    private final EventBus eventBus;
+
     @Inject
-    public InstanceServiceImpl(Clock clock, ComputeBackend computeBackend) {
+    public InstanceServiceImpl(Clock clock, ComputeBackend computeBackend, EventBus eventBus) {
         this.clock = clock;
         this.computeBackend = computeBackend;
+        this.eventBus = eventBus;
     }
 
     @Override

@@ -12,6 +12,7 @@ import jc121f1.model.instance.dao.Instance;
 import jc121f1.services.instance.compute.ComputeBackend;
 import jc121f1.services.instance.InstanceService;
 import jc121f1.services.instance.InstanceServiceImpl;
+import jc121f1.services.instance.events.EventBus;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -38,13 +39,14 @@ public class InstanceServiceTest {
 
     @Mock private Clock clock;
     @Mock private ComputeBackend computeBackend;
+    @Mock private EventBus eventBus;
 
     @Nested class Given_an_instance_service {
         InstanceService instanceService;
 
         @BeforeEach
         void setup() {
-            instanceService = new InstanceServiceImpl(clock, computeBackend);
+            instanceService = new InstanceServiceImpl(clock, computeBackend, eventBus);
             Mockito.lenient().when(computeBackend.start(Mockito.any()))
                     .thenReturn(CompletableFuture.completedFuture(null));
             Mockito.lenient().when(computeBackend.create(Mockito.any()))
