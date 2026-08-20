@@ -104,7 +104,7 @@ public class DockerComputeBackend implements ComputeBackend {
         String containerId = getContainerId(instance);
 
         return CompletableFuture.runAsync(() -> {
-            dockerClient.removeContainerCmd(containerId).exec();
+            dockerClient.removeContainerCmd(containerId).withForce(true).exec();
 
             instanceToContainer.remove(instance.getId());
         }, computeExecutor);

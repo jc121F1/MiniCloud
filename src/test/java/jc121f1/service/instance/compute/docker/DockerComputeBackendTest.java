@@ -257,6 +257,9 @@ public class DockerComputeBackendTest {
 
             Mockito.when(dockerClient.removeContainerCmd(CONTAINER_ID))
                     .thenReturn(removeContainerCmd);
+
+            Mockito.when(removeContainerCmd.withForce(true))
+                    .thenReturn(removeContainerCmd);
         }
 
         @Test
