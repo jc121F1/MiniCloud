@@ -21,7 +21,6 @@
 
         <module name="LocalVariableName"/>
         <module name="ParameterName"/>
-        <module name="MemberName"/>
         <module name="LocalFinalVariableName"/>
         <module name="ClassTypeParameterName"/>
         <module name="MethodTypeParameterName"/>
