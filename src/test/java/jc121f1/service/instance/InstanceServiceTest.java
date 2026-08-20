@@ -482,8 +482,6 @@ public class InstanceServiceTest {
                         .cpu(DEFAULT_CPU)
                         .memory(DEFAULT_MEMORY)
                         .build());
-
-                instance.setState(InstanceState.RUNNING);
             }
 
             @Test

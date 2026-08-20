@@ -150,16 +150,15 @@ public class InstanceServiceImpl implements InstanceService {
         stop = getByIdOrName(identifier);
 
         if (stop.getState().isStoppable()) {
-            stop.setState(InstanceState.STOPPING);
+            stop = setInstanceState(stop, InstanceState.STOPPING);
         } else {
             throw new IllegalArgumentException(
                     "Instance {" + identifier + "} is not in a startable state. " +
                             "Current state is {" + stop.getState() + "}");
         }
-        Instance copy = stop.toBuilder().build();
         stopInstance(stop);
 
-        return copy;
+        return stop.copyOf();
     }
 
     @Override
@@ -177,15 +176,14 @@ public class InstanceServiceImpl implements InstanceService {
         }
         start = getByIdOrName(identifier);
         if (start.getState().isStartable()) {
-            start.setState(InstanceState.STARTING);
+            start = setInstanceState(start, InstanceState.STARTING);
         } else {
             throw new IllegalArgumentException(
                     "Instance {" + identifier + "} is not in a startable state. " +
                             "Current state is {" + start.getState() + "}");
         }
-        Instance copy = start.toBuilder().build();
         startInstance(start);
-        return copy;
+        return start.copyOf();
     }
 
     private Instance getByIdOrName(String identifier) {
@@ -198,9 +196,9 @@ public class InstanceServiceImpl implements InstanceService {
     private void startInstance(Instance instance) {
         computeBackend.start(instance)
                 .thenRun(() ->
-                        instance.setState(InstanceState.RUNNING))
+                        setInstanceState(instance, InstanceState.RUNNING))
                 .exceptionally(error -> {
-                    instance.setState(InstanceState.MISSING);
+                    setInstanceState(instance, InstanceState.MISSING);
                     return null;
                 });
     }
@@ -212,9 +210,9 @@ public class InstanceServiceImpl implements InstanceService {
     private void stopInstance(Instance instance) {
         computeBackend.stop(instance)
                 .thenRun(() ->
-                        instance.setState(InstanceState.STOPPED))
+                        setInstanceState(instance, InstanceState.STOPPED))
                 .exceptionally(error -> {
-                    instance.setState(InstanceState.MISSING);
+                    setInstanceState(instance, InstanceState.MISSING);
                     return null;
                 });
     }
@@ -230,10 +228,15 @@ public class InstanceServiceImpl implements InstanceService {
         }
     }
 
-    private synchronized void replaceInstance(Instance instance) {
+    private synchronized Instance replaceInstance(Instance instance) {
         Instance existing = instancesById.get(instance.getId());
         if (existing != null) {
             instancesById.put(instance.getId(), instance);
         }
+        return instance;
+    }
+
+    private synchronized Instance setInstanceState(Instance instance, InstanceState state) {
+        return replaceInstance(instance.toBuilder().state(state).build());
     }
 }

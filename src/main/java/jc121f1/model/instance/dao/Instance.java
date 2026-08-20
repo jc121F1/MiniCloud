@@ -13,7 +13,6 @@ import jc121f1.model.instance.InstanceState;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
-import lombok.Setter;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -24,23 +23,22 @@ import java.time.temporal.ChronoUnit;
 @EqualsAndHashCode(callSuper = false)
 @JsonDeserialize(builder = Instance.InstanceBuilder.class)
 public class Instance {
-    private String name;
+    private final String name;
 
-    private int cpu;
+    private final int cpu;
 
-    private int memory;
+    private final int memory;
 
-    private String id;
+    private final String id;
 
-    @Setter
     @EqualsAndHashCode.Exclude
-    private InstanceState state;
+    private final InstanceState state;
 
     @JsonIgnore
     @EqualsAndHashCode.Exclude
     @JsonSerialize(using = InstantSerializer.class)
     @JsonDeserialize(using = InstantDeserializer.class)
-    private Instant createdAt;
+    private final Instant createdAt;
 
     public long memoryInBytes() {
         return (long) memory * 1024 * 1024;
@@ -50,7 +48,7 @@ public class Instance {
     public static class InstanceBuilder {
     }
 
-    public class InstantSerializer extends JsonSerializer<Instant> {
+    public static class InstantSerializer extends JsonSerializer<Instant> {
 
         @Override
         public void serialize(
@@ -64,7 +62,7 @@ public class Instance {
         }
     }
 
-    public class InstantDeserializer extends JsonDeserializer<Instant> {
+    public static class InstantDeserializer extends JsonDeserializer<Instant> {
 
         @Override
         public Instant deserialize(
@@ -73,5 +71,9 @@ public class Instance {
 
             return Instant.parse(parser.getText());
         }
+    }
+
+    public Instance copyOf() {
+        return this.toBuilder().build();
     }
 }
