@@ -9,12 +9,15 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import jc121f1.model.instance.dao.Instance;
 import jc121f1.services.instance.compute.ComputeBackend;
 import jc121f1.services.instance.events.EventBus;
+import lombok.extern.slf4j.Slf4j;
 
 import javax.inject.Inject;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
+
+@Slf4j
 public class DockerComputeBackend implements ComputeBackend {
 
     private final Map<String, String> instanceToContainer =
@@ -116,9 +119,12 @@ public class DockerComputeBackend implements ComputeBackend {
 
         for (String containerId : instanceToContainer.values()) {
             try {
+                log.info("Closing container " + containerId);
                 dockerClient.stopContainerCmd(containerId).exec();
-            } catch (Exception ignored) {
+                dockerClient.removeContainerCmd(containerId).withForce(true).exec();
+            } catch (Exception e) {
                 // Container may already be stopped or removed.
+                log.warn("Failed to close Docker client", e);
             }
         }
 
