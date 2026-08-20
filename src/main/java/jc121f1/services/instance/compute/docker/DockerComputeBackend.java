@@ -79,7 +79,7 @@ public class DockerComputeBackend implements ComputeBackend {
             } catch (Exception e) {
                 startFuture.completeExceptionally(e);
             }
-        });
+        }, computeExecutor);
 
         return startCommand.thenCompose(ignored -> startFuture)
                 .thenApply(event -> null);
@@ -93,7 +93,7 @@ public class DockerComputeBackend implements ComputeBackend {
                 eventListener.waitFor(containerId, EventAction.DIE);
 
         CompletableFuture<Void> command = CompletableFuture.runAsync(() ->
-                dockerClient.stopContainerCmd(containerId).exec());
+                dockerClient.stopContainerCmd(containerId).exec(), computeExecutor);
 
         return command.thenCompose(ignored ->
                 stopped.thenApply(ignoredEvent -> null));
@@ -107,7 +107,7 @@ public class DockerComputeBackend implements ComputeBackend {
             dockerClient.removeContainerCmd(containerId).exec();
 
             instanceToContainer.remove(instance.getId());
-        });
+        }, computeExecutor);
     }
 
     @Override
