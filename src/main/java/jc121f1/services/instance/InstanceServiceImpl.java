@@ -94,7 +94,11 @@ public class InstanceServiceImpl implements InstanceService {
         idsByName.put(request.getName(), instanceId);
 
         createInstance(createdInstance)
-                .thenRun(() -> startInstance(createdInstance));
+                .thenRun(() -> startInstance(createdInstance))
+                .exceptionally(error -> {
+                    replaceInstance(createdInstance.toBuilder().state(InstanceState.MISSING).build());
+                    return null;
+                });
 
         return returnedInstance;
     }
@@ -223,6 +227,13 @@ public class InstanceServiceImpl implements InstanceService {
                     instancesById.put(instance.getId(), instance.toBuilder().state(InstanceState.MISSING).build());
                 }
             });
+        }
+    }
+
+    private synchronized void replaceInstance(Instance instance) {
+        Instance existing = instancesById.get(instance.getId());
+        if (existing != null) {
+            instancesById.put(instance.getId(), instance);
         }
     }
 }
