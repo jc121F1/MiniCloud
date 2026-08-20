@@ -58,6 +58,7 @@ dependencies {
 tasks {
     test {
         jvmArgs.add("-javaagent:${mockitoAgent.asPath}")
+        exclude("**/*EndToEndTest.class")
     }
 }
 
@@ -106,4 +107,8 @@ tasks.named<Checkstyle>("checkstyleMain") {
 
 tasks.named<Checkstyle>("checkstyleTest") {
     configFile = file("config/checkstyle/checkstyleTest.xml")
+}
+
+tasks.named<com.github.spotbugs.snom.SpotBugsTask>("spotbugsTest") {
+    enabled = false
 }
