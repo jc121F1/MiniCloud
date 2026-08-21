@@ -13,6 +13,9 @@ import jc121f1.model.instance.InstanceState;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbIgnore;
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbImmutable;
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbPartitionKey;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -22,6 +25,7 @@ import java.time.temporal.ChronoUnit;
 @Builder(toBuilder = true)
 @EqualsAndHashCode(callSuper = false)
 @JsonDeserialize(builder = Instance.InstanceBuilder.class)
+@DynamoDbImmutable(builder = Instance.InstanceBuilder.class)
 public class Instance {
     private final String name;
 
@@ -40,12 +44,19 @@ public class Instance {
     @JsonDeserialize(using = InstantDeserializer.class)
     private final Instant createdAt;
 
+    @DynamoDbIgnore
     public long memoryInBytes() {
         return (long) memory * 1024 * 1024;
     }
 
     @com.fasterxml.jackson.databind.annotation.JsonPOJOBuilder(withPrefix = "")
     public static class InstanceBuilder {
+
+        @DynamoDbPartitionKey
+        public InstanceBuilder id(String id) {
+            this.id = id;
+            return this;
+        }
     }
 
     public static class InstantSerializer extends JsonSerializer<Instant> {
@@ -73,6 +84,7 @@ public class Instance {
         }
     }
 
+    @DynamoDbIgnore
     public Instance copyOf() {
         return this.toBuilder().build();
     }
