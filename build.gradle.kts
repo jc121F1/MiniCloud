@@ -61,11 +61,9 @@ tasks {
     test {
         jvmArgs.add("-javaagent:${mockitoAgent.asPath}")
         exclude("**/*EndToEndTest.class")
+        useJUnitPlatform()
+        systemProperty("DISABLE_JMDNS", "true")
     }
-}
-
-tasks.test {
-    useJUnitPlatform()
 }
 
 tasks.named<ShadowJar>("shadowJar") {
@@ -76,7 +74,6 @@ tasks.named<ShadowJar>("shadowJar") {
 
 tasks.jacocoTestReport {
     dependsOn(tasks.test)
-
     reports {
         html.required.set(true)
         xml.required.set(true)

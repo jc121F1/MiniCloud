@@ -1,5 +1,8 @@
 package jc121f1.dagger;
 
+import jc121f1.dagger.qualifiers.Debug;
+import jc121f1.dagger.qualifiers.DisableJmDNS;
+import jc121f1.dagger.qualifiers.ExposeShutdownEndpoint;
 import jc121f1.services.instance.compute.ComputeBackend;
 import jc121f1.wbs.handlers.delete.DeleteInstanceHandler;
 import jc121f1.wbs.handlers.get.GetInstanceHandler;
@@ -25,4 +28,10 @@ public interface WebserviceHandlers {
     StartInstanceHandler startInstanceHandler();
 
     ComputeBackend computeBackend();
+
+    @ExposeShutdownEndpoint Boolean shutdownEndpoint();
+
+    @Debug Boolean debug();
+
+    @DisableJmDNS Boolean disableJmDNS();
 }
