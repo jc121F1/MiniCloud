@@ -43,6 +43,9 @@ dependencies {
     implementation("com.github.docker-java:docker-java:3.7.1")
     implementation("org.jmdns:jmdns:3.6.3")
     implementation("com.github.docker-java:docker-java-transport-httpclient5:3.7.1")
+    implementation(platform("software.amazon.awssdk:bom:2.27.21"))
+    implementation("software.amazon.awssdk:dynamodb")
+    implementation("software.amazon.awssdk:dynamodb-enhanced")
     runtimeOnly("ch.qos.logback:logback-classic:1.5.18")
 
     testImplementation(platform("org.junit:junit-bom:5.13.4"))
