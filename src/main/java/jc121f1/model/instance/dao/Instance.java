@@ -16,6 +16,7 @@ import lombok.Getter;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbIgnore;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbImmutable;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbPartitionKey;
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSecondaryPartitionKey;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -55,6 +56,12 @@ public class Instance {
         @DynamoDbPartitionKey
         public InstanceBuilder id(String id) {
             this.id = id;
+            return this;
+        }
+
+        @DynamoDbSecondaryPartitionKey(indexNames = "InstanceNameIndex")
+        public InstanceBuilder name(String name) {
+            this.name = name;
             return this;
         }
     }

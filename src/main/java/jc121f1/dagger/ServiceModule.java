@@ -19,8 +19,15 @@ import jc121f1.services.instance.compute.docker.DockerComputeBackend;
 import jc121f1.services.instance.compute.docker.DockerEventListener;
 import jc121f1.services.instance.events.EventBus;
 import jc121f1.services.instance.events.SimpleEventBus;
+import jc121f1.services.instance.store.InstanceStore;
+import jc121f1.services.instance.store.nosql.DynamoDbInstanceStore;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
 
 import javax.inject.Singleton;
+import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
@@ -35,6 +42,9 @@ public abstract class ServiceModule {
 
     @Binds @Singleton
     public abstract ComputeBackend computeBackend(DockerComputeBackend dockerComputeBackend);
+
+    @Binds @Singleton
+    public abstract InstanceStore instanceStore(DynamoDbInstanceStore instanceStore);
 
     @Provides @Singleton
     public static Clock clock() {
@@ -77,5 +87,18 @@ public abstract class ServiceModule {
     @Provides
     public static Executor executor() {
         return Executors.newVirtualThreadPerTaskExecutor();
+    }
+
+    @Provides
+    public static DynamoDbAsyncClient dynamoDbAsyncClient() {
+        return DynamoDbAsyncClient.builder()
+                .endpointOverride(URI.create("http://localhost:8000"))
+                .region(Region.US_EAST_1)
+                .credentialsProvider(
+                        StaticCredentialsProvider.create(
+                                AwsBasicCredentials.create("dummy", "dummy")
+                        )
+                )
+                .build();
     }
 }
