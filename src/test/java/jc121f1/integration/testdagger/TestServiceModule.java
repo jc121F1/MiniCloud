@@ -6,6 +6,7 @@ import jc121f1.services.instance.InstanceService;
 import jc121f1.services.instance.InstanceServiceImpl;
 import jc121f1.services.instance.compute.ComputeBackend;
 import jc121f1.services.instance.events.EventBus;
+import jc121f1.services.instance.store.InstanceStore;
 import org.assertj.core.util.VisibleForTesting;
 import org.mockito.Mockito;
 
@@ -41,10 +42,17 @@ public class TestServiceModule {
 
     @Provides
     @Singleton
+    InstanceStore instanceStore() {
+        return Mockito.mock(InstanceStore.class);
+    }
+
+    @Provides
+    @Singleton
     InstanceService instanceService(
             Clock clock,
-            ComputeBackend computeBackend) {
+            ComputeBackend computeBackend,
+            InstanceStore instanceStore) {
 
-        return new InstanceServiceImpl(clock, computeBackend, eventBus());
+        return new InstanceServiceImpl(clock, computeBackend, eventBus(), instanceStore);
     }
 }

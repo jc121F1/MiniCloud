@@ -4,6 +4,7 @@ import jc121f1.dagger.qualifiers.Debug;
 import jc121f1.dagger.qualifiers.DisableJmDNS;
 import jc121f1.dagger.qualifiers.ExposeShutdownEndpoint;
 import jc121f1.services.instance.compute.ComputeBackend;
+import jc121f1.services.instance.store.InstanceStore;
 import jc121f1.wbs.handlers.delete.DeleteInstanceHandler;
 import jc121f1.wbs.handlers.get.GetInstanceHandler;
 import jc121f1.wbs.handlers.get.ListInstanceHandler;
@@ -28,6 +29,8 @@ public interface WebserviceHandlers {
     StartInstanceHandler startInstanceHandler();
 
     ComputeBackend computeBackend();
+
+    InstanceStore instanceStore();
 
     @ExposeShutdownEndpoint Boolean shutdownEndpoint();
 

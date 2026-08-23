@@ -16,6 +16,7 @@ import jc121f1.services.instance.compute.docker.EventAction;
 import jc121f1.services.instance.events.EventBus;
 import jc121f1.services.instance.events.InstanceHealthEvent;
 import jc121f1.services.instance.events.SimpleEventBus;
+import jc121f1.services.instance.store.InstanceStore;
 import org.assertj.core.api.Assertions;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,11 +31,13 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ConcurrentMap;
 
 @MiniCloudTest
 public class InstanceServiceTest {
@@ -44,20 +47,70 @@ public class InstanceServiceTest {
 
     @Mock private Clock clock;
     @Mock private ComputeBackend computeBackend;
+    @Mock private InstanceStore instanceStore;
     @Spy private EventBus eventBus = new SimpleEventBus(Executors.newVirtualThreadPerTaskExecutor());
 
     @Nested class Given_an_instance_service {
         InstanceService instanceService;
+        ConcurrentMap<String, Instance> instancesById;
+        ConcurrentMap<String, String> idsByName;
 
         @BeforeEach
         void setup() {
-            instanceService = new InstanceServiceImpl(clock, computeBackend, eventBus);
+            instancesById = new ConcurrentHashMap<>();
+            idsByName = new ConcurrentHashMap<>();
+            instanceService = new InstanceServiceImpl(clock, computeBackend, eventBus, instanceStore);
             Mockito.lenient().when(computeBackend.start(Mockito.any()))
                     .thenReturn(CompletableFuture.completedFuture(null));
             Mockito.lenient().when(computeBackend.create(Mockito.any()))
                     .thenReturn(CompletableFuture.completedFuture(null));
             Mockito.lenient().when(computeBackend.stop(Mockito.any()))
                     .thenReturn(CompletableFuture.completedFuture(null));
+            Mockito.lenient().when(computeBackend.delete(Mockito.any()))
+                    .thenReturn(CompletableFuture.completedFuture(null));
+
+            Mockito.lenient().when(instanceStore.get(Mockito.anyString()))
+                    .thenAnswer(invocation -> CompletableFuture.completedFuture(
+                            java.util.Optional.ofNullable(instancesById.get(invocation.getArgument(0)))
+                    ));
+            Mockito.lenient().when(instanceStore.getByName(Mockito.anyString()))
+                    .thenAnswer(invocation -> CompletableFuture.completedFuture(
+                            java.util.Optional.ofNullable(idsByName.get(invocation.getArgument(0)))
+                                    .map(instancesById::get)
+                    ));
+            Mockito.lenient().when(instanceStore.list())
+                    .thenAnswer(invocation -> CompletableFuture.completedFuture(
+                            List.copyOf(instancesById.values())
+                    ));
+            Mockito.lenient().when(instanceStore.create(Mockito.any()))
+                    .thenAnswer(invocation -> {
+                        Instance created = invocation.getArgument(0);
+                        if (idsByName.putIfAbsent(created.getName(), created.getId()) != null) {
+                            return CompletableFuture.failedFuture(new IllegalArgumentException(
+                                    "An instance with name '" + created.getName() + "' already exists"
+                            ));
+                        }
+                        instancesById.put(created.getId(), created);
+                        return CompletableFuture.completedFuture(created);
+                    });
+            Mockito.lenient().when(instanceStore.update(Mockito.any(), Mockito.any()))
+                    .thenAnswer(invocation -> {
+                        Instance previous = invocation.getArgument(0);
+                        Instance updated = invocation.getArgument(1);
+                        instancesById.replace(previous.getId(), updated);
+                        if (!previous.getName().equals(updated.getName())) {
+                            idsByName.remove(previous.getName(), previous.getId());
+                            idsByName.put(updated.getName(), updated.getId());
+                        }
+                        return CompletableFuture.completedFuture(updated);
+                    });
+            Mockito.lenient().when(instanceStore.delete(Mockito.any()))
+                    .thenAnswer(invocation -> {
+                        Instance deleted = invocation.getArgument(0);
+                        instancesById.remove(deleted.getId());
+                        idsByName.remove(deleted.getName(), deleted.getId());
+                        return CompletableFuture.completedFuture(null);
+                    });
         }
 
         @Nested class When_receiving_a_valid_create_request {
@@ -119,6 +172,8 @@ public class InstanceServiceTest {
                             .build();
                     Mockito.when(clock.instant()).thenReturn(Instant.now());
                     instance = instanceService.create(request);
+                    instance = instanceService.get(GetInstanceRequest.builder()
+                            .instanceId(instance.getId()).build());
                 }
 
                 @Test void It_should_throw_exception() {
@@ -262,7 +317,7 @@ public class InstanceServiceTest {
                             .build();
 
                     Assertions.assertThatThrownBy(() -> instanceService.get(request))
-                            .hasMessage("Resource not found");
+                            .hasMessageContaining("Instance not found");
                 }
             }
         }
@@ -289,6 +344,8 @@ public class InstanceServiceTest {
                         .cpu(DEFAULT_CPU)
                         .memory(DEFAULT_MEMORY)
                         .build());
+                expected = instanceService.get(GetInstanceRequest.builder()
+                        .instanceId(expected.getId()).build());
             }
 
             @Nested
@@ -319,7 +376,7 @@ public class InstanceServiceTest {
                             .build();
 
                     Assertions.assertThatThrownBy(() -> instanceService.get(request))
-                            .hasMessage("Resource not found");
+                            .hasMessageContaining("Instance not found");
                 }
 
                 @Test
@@ -329,7 +386,7 @@ public class InstanceServiceTest {
                             .build();
 
                     Assertions.assertThatThrownBy(() -> instanceService.get(request))
-                            .hasMessage("Resource not found");
+                            .hasMessageContaining("Instance not found");
                 }
             }
 
@@ -361,7 +418,7 @@ public class InstanceServiceTest {
                             .build();
 
                     Assertions.assertThatThrownBy(() -> instanceService.get(request))
-                            .hasMessage("Resource not found");
+                            .hasMessageContaining("Instance not found");
                 }
 
                 @Test
@@ -371,7 +428,7 @@ public class InstanceServiceTest {
                             .build();
 
                     Assertions.assertThatThrownBy(() -> instanceService.get(request))
-                            .hasMessage("Resource not found");
+                            .hasMessageContaining("Instance not found");
                 }
             }
         }
@@ -393,7 +450,7 @@ public class InstanceServiceTest {
                     .build();
 
             Assertions.assertThatThrownBy(() -> instanceService.delete(request))
-                    .hasMessage("Resource not found");
+                    .hasMessageContaining("Instance not found");
         }
 
         @Nested
@@ -418,7 +475,7 @@ public class InstanceServiceTest {
                         .build();
 
                 Assertions.assertThatThrownBy(() -> instanceService.start(request))
-                        .hasMessage("Resource not found");
+                        .hasMessageContaining("Instance not found");
             }
 
             @Test
