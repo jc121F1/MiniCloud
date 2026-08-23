@@ -161,18 +161,103 @@ public class DynamoDbInstanceStore implements InstanceStore {
     }
 
     @Override
-    public CompletableFuture<Instance> update(Instance instance) {
-        return table.putItem(instance)
-                .thenApply(_ -> instance);
+    public CompletableFuture<Instance> update(Instance previous, Instance updated) {
+        Map<String, AttributeValue> updatedInstanceItem =
+                TableSchema.fromImmutableClass(Instance.class)
+                        .itemToMap(updated, true);
+
+        List<TransactWriteItem> items = new ArrayList<>();
+
+        if (!previous.getName().equals(updated.getName())) {
+            items.add(
+                    TransactWriteItem.builder()
+                            .delete(delete -> delete
+                                    .tableName(TABLE_NAME)
+                                    .key(Map.of(
+                                            "id",
+                                            AttributeValue.builder()
+                                                    .s("__name_lock__" + previous.getName())
+                                                    .build()
+                                    )))
+                            .build()
+            );
+
+            items.add(
+                    TransactWriteItem.builder()
+                            .put(Put.builder()
+                                    .tableName(TABLE_NAME)
+                                    .item(Map.of(
+                                            "id",
+                                            AttributeValue.builder()
+                                                    .s("__name_lock__" + updated.getName())
+                                                    .build()
+                                    ))
+                                    .conditionExpression("attribute_not_exists(id)")
+                                    .build())
+                            .build()
+            );
+        }
+
+        items.add(
+                TransactWriteItem.builder()
+                        .put(Put.builder()
+                                .tableName(TABLE_NAME)
+                                .item(updatedInstanceItem)
+                                .conditionExpression(
+                                        "attribute_exists(id) AND #name = :previousName"
+                                )
+                                .expressionAttributeNames(Map.of(
+                                        "#name", "name"
+                                ))
+                                .expressionAttributeValues(Map.of(
+                                        ":previousName",
+                                        AttributeValue.builder()
+                                                .s(previous.getName())
+                                                .build()
+                                ))
+                                .build())
+                        .build()
+        );
+
+        return dynamoDbAsyncClient
+                .transactWriteItems(
+                        TransactWriteItemsRequest.builder()
+                                .transactItems(items)
+                                .build()
+                )
+                .thenApply(_ -> updated);
     }
 
     @Override
-    public CompletableFuture<Void> delete(String instanceId) {
-        return table.deleteItem(request -> request.key(
-                        Key.builder()
-                                .partitionValue(instanceId)
-                                .build()
-                ))
+    public CompletableFuture<Void> delete(Instance instance) {
+        TransactWriteItemsRequest request =
+                TransactWriteItemsRequest.builder()
+                        .transactItems(
+                                TransactWriteItem.builder()
+                                        .delete(delete -> delete
+                                                .tableName(TABLE_NAME)
+                                                .key(Map.of(
+                                                        "id",
+                                                        AttributeValue.builder()
+                                                                .s(instance.getId())
+                                                                .build()
+                                                )))
+                                        .build(),
+                                TransactWriteItem.builder()
+                                        .delete(delete -> delete
+                                                .tableName(TABLE_NAME)
+                                                .key(Map.of(
+                                                        "id",
+                                                        AttributeValue.builder()
+                                                                .s("__name_lock__" + instance.getName())
+                                                                .build()
+                                                )))
+                                        .build()
+                        )
+                        .build();
+
+        return dynamoDbAsyncClient
+                .transactWriteItems(request)
                 .thenApply(_ -> null);
     }
 

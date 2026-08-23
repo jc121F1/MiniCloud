@@ -326,22 +326,187 @@ class DynamoDbInstanceStoreTest {
     @Nested
     class Update {
 
-        @Test
-        void returnsInstance() {
-            Mockito.when(table.putItem(instance))
-                    .thenReturn(
-                            CompletableFuture.completedFuture(null)
-                    );
+        private Instance previous;
+        private Instance updated;
 
-            Instance result =
-                    store.update(instance).join();
+        @BeforeEach
+        void setUpInstances() {
+            previous = Instance.builder()
+                    .id(INSTANCE_ID)
+                    .name(INSTANCE_NAME)
+                    .build();
+
+            updated = Instance.builder()
+                    .id(INSTANCE_ID)
+                    .name(INSTANCE_NAME)
+                    .build();
+        }
+
+        @Test
+        void updatesInstanceWithoutChangingName() {
+            Mockito.when(dynamoDbAsyncClient.transactWriteItems(
+                    ArgumentMatchers.any(TransactWriteItemsRequest.class)
+            )).thenReturn(
+                    CompletableFuture.completedFuture(null)
+            );
+
+            Instance result = store.update(previous, updated).join();
 
             Assertions.assertEquals(
-                    instance,
+                    updated,
                     result
             );
 
-            Mockito.verify(table).putItem(instance);
+            ArgumentCaptor<TransactWriteItemsRequest> captor =
+                    ArgumentCaptor.forClass(
+                            TransactWriteItemsRequest.class
+                    );
+
+            Mockito.verify(dynamoDbAsyncClient)
+                    .transactWriteItems(captor.capture());
+
+            TransactWriteItemsRequest request = captor.getValue();
+
+            Assertions.assertEquals(
+                    1,
+                    request.transactItems().size()
+            );
+
+            TransactWriteItem instanceWrite =
+                    request.transactItems().getFirst();
+
+            Assertions.assertNotNull(instanceWrite.put());
+
+            Assertions.assertEquals(
+                    "MiniCloudInstanceStore",
+                    instanceWrite.put().tableName()
+            );
+
+            Assertions.assertEquals(
+                    INSTANCE_ID,
+                    instanceWrite.put()
+                            .item()
+                            .get("id")
+                            .s()
+            );
+
+            Assertions.assertEquals(
+                    "attribute_exists(id) AND #name = :previousName",
+                    instanceWrite.put()
+                            .conditionExpression()
+            );
+
+            Assertions.assertEquals(
+                    INSTANCE_NAME,
+                    instanceWrite.put()
+                            .expressionAttributeValues()
+                            .get(":previousName")
+                            .s()
+            );
+
+            Mockito.verifyNoInteractions(table);
+        }
+
+        @Test
+        void updatesInstanceAndNameLockWhenNameChanges() {
+            String newName = "renamed-instance";
+
+            previous = Instance.builder()
+                    .id(INSTANCE_ID)
+                    .name(INSTANCE_NAME)
+                    .build();
+
+            updated = Instance.builder()
+                    .id(INSTANCE_ID)
+                    .name(newName)
+                    .build();
+
+            Mockito.when(dynamoDbAsyncClient.transactWriteItems(
+                    ArgumentMatchers.any(TransactWriteItemsRequest.class)
+            )).thenReturn(
+                    CompletableFuture.completedFuture(null)
+            );
+
+            Instance result = store.update(previous, updated).join();
+
+            Assertions.assertEquals(
+                    updated,
+                    result
+            );
+
+            ArgumentCaptor<TransactWriteItemsRequest> captor =
+                    ArgumentCaptor.forClass(
+                            TransactWriteItemsRequest.class
+                    );
+
+            Mockito.verify(dynamoDbAsyncClient)
+                    .transactWriteItems(captor.capture());
+
+            TransactWriteItemsRequest request = captor.getValue();
+
+            Assertions.assertEquals(
+                    3,
+                    request.transactItems().size()
+            );
+
+            TransactWriteItem deleteLock =
+                    request.transactItems().get(0);
+
+            TransactWriteItem createLock =
+                    request.transactItems().get(1);
+
+            TransactWriteItem instanceWrite =
+                    request.transactItems().get(2);
+
+            Assertions.assertNotNull(deleteLock.delete());
+            Assertions.assertNotNull(createLock.put());
+            Assertions.assertNotNull(instanceWrite.put());
+
+            Assertions.assertEquals(
+                    NAME_LOCK_ID,
+                    deleteLock.delete()
+                            .key()
+                            .get("id")
+                            .s()
+            );
+
+            Assertions.assertEquals(
+                    "__name_lock__" + newName,
+                    createLock.put()
+                            .item()
+                            .get("id")
+                            .s()
+            );
+
+            Assertions.assertEquals(
+                    "attribute_not_exists(id)",
+                    createLock.put()
+                            .conditionExpression()
+            );
+
+            Assertions.assertEquals(
+                    INSTANCE_ID,
+                    instanceWrite.put()
+                            .item()
+                            .get("id")
+                            .s()
+            );
+
+            Assertions.assertEquals(
+                    "attribute_exists(id) AND #name = :previousName",
+                    instanceWrite.put()
+                            .conditionExpression()
+            );
+
+            Assertions.assertEquals(
+                    INSTANCE_NAME,
+                    instanceWrite.put()
+                            .expressionAttributeValues()
+                            .get(":previousName")
+                            .s()
+            );
+
+            Mockito.verifyNoInteractions(table);
         }
 
         @Test
@@ -349,15 +514,23 @@ class DynamoDbInstanceStoreTest {
             RuntimeException exception =
                     new RuntimeException("Update failed");
 
-            Mockito.when(table.putItem(instance))
-                    .thenReturn(
-                            CompletableFuture.failedFuture(exception)
-                    );
+            Mockito.when(dynamoDbAsyncClient.transactWriteItems(
+                    ArgumentMatchers.any(TransactWriteItemsRequest.class)
+            )).thenReturn(
+                    CompletableFuture.failedFuture(exception)
+            );
 
             Assertions.assertThrows(
                     RuntimeException.class,
-                    () -> store.update(instance).join()
+                    () -> store.update(previous, updated).join()
             );
+
+            Mockito.verify(dynamoDbAsyncClient)
+                    .transactWriteItems(
+                            ArgumentMatchers.any(
+                                    TransactWriteItemsRequest.class
+                            )
+                    );
         }
     }
 
@@ -365,35 +538,100 @@ class DynamoDbInstanceStoreTest {
     class Delete {
 
         @Test
-        void deletesInstance() {
-            Mockito.when(table.deleteItem(
-                    ArgumentMatchers.any(Consumer.class)
+        void deletesInstanceAndNameLock() {
+            Instance instance = Instance.builder()
+                    .id(INSTANCE_ID)
+                    .name(INSTANCE_NAME)
+                    .build();
+
+            Mockito.when(dynamoDbAsyncClient.transactWriteItems(
+                    ArgumentMatchers.any(TransactWriteItemsRequest.class)
             )).thenReturn(
                     CompletableFuture.completedFuture(null)
             );
 
-            store.delete(INSTANCE_ID).join();
+            store.delete(instance).join();
 
-            Mockito.verify(table).deleteItem(
-                    ArgumentMatchers.any(Consumer.class)
+            ArgumentCaptor<TransactWriteItemsRequest> captor =
+                    ArgumentCaptor.forClass(
+                            TransactWriteItemsRequest.class
+                    );
+
+            Mockito.verify(dynamoDbAsyncClient)
+                    .transactWriteItems(captor.capture());
+
+            TransactWriteItemsRequest request = captor.getValue();
+
+            Assertions.assertEquals(
+                    2,
+                    request.transactItems().size()
             );
+
+            TransactWriteItem instanceDelete =
+                    request.transactItems().get(0);
+
+            TransactWriteItem nameLockDelete =
+                    request.transactItems().get(1);
+
+            Assertions.assertNotNull(instanceDelete.delete());
+            Assertions.assertNotNull(nameLockDelete.delete());
+
+            Assertions.assertEquals(
+                    INSTANCE_ID,
+                    instanceDelete.delete()
+                            .key()
+                            .get("id")
+                            .s()
+            );
+
+            Assertions.assertEquals(
+                    NAME_LOCK_ID,
+                    nameLockDelete.delete()
+                            .key()
+                            .get("id")
+                            .s()
+            );
+
+            Assertions.assertEquals(
+                    "MiniCloudInstanceStore",
+                    instanceDelete.delete().tableName()
+            );
+
+            Assertions.assertEquals(
+                    "MiniCloudInstanceStore",
+                    nameLockDelete.delete().tableName()
+            );
+
+            Mockito.verifyNoInteractions(table);
         }
 
         @Test
         void propagatesFailure() {
+            Instance instance = Instance.builder()
+                    .id(INSTANCE_ID)
+                    .name(INSTANCE_NAME)
+                    .build();
+
             RuntimeException exception =
                     new RuntimeException("Delete failed");
 
-            Mockito.when(table.deleteItem(
-                    ArgumentMatchers.any(Consumer.class)
+            Mockito.when(dynamoDbAsyncClient.transactWriteItems(
+                    ArgumentMatchers.any(TransactWriteItemsRequest.class)
             )).thenReturn(
                     CompletableFuture.failedFuture(exception)
             );
 
             Assertions.assertThrows(
                     RuntimeException.class,
-                    () -> store.delete(INSTANCE_ID).join()
+                    () -> store.delete(instance).join()
             );
+
+            Mockito.verify(dynamoDbAsyncClient)
+                    .transactWriteItems(
+                            ArgumentMatchers.any(
+                                    TransactWriteItemsRequest.class
+                            )
+                    );
         }
     }
 }

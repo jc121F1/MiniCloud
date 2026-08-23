@@ -11,6 +11,6 @@ public interface InstanceStore {
     CompletableFuture<Optional<Instance>> getByName(String instanceId);
     CompletableFuture<List<Instance>> list();
     CompletableFuture<Instance> create(Instance instance);
-    CompletableFuture<Instance> update(Instance instance);
-    CompletableFuture<Void> delete(String instanceId);
+    CompletableFuture<Instance> update(Instance previousInstance, Instance newInstance);
+    CompletableFuture<Void> delete(Instance instance);
 }
