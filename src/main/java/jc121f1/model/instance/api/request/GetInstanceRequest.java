@@ -16,4 +16,16 @@ public class GetInstanceRequest {
     private String instanceId;
     @Nullable
     private String name;
+
+    public boolean hasName() {
+        return name != null;
+    }
+
+    public boolean hasInstanceId() {
+        return instanceId != null;
+    }
+
+    public boolean hasIdentifier() {
+        return this.hasName() || this.hasInstanceId();
+    }
 }
