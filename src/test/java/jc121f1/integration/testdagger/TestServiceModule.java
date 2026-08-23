@@ -1,5 +1,6 @@
 package jc121f1.integration.testdagger;
 
+import com.github.dockerjava.api.DockerClient;
 import dagger.Module;
 import dagger.Provides;
 import jc121f1.services.instance.InstanceService;
@@ -23,6 +24,12 @@ public class TestServiceModule {
     @Singleton
     ComputeBackend computeBackend() {
         return Mockito.mock(ComputeBackend.class);
+    }
+
+    @Provides
+    @Singleton
+    DockerClient dockerClient() {
+        return Mockito.mock(DockerClient.class);
     }
 
     @Provides

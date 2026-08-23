@@ -1,11 +1,13 @@
 package jc121f1.e2e;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.dockerjava.api.DockerClient;
 import io.javalin.Javalin;
 import io.javalin.testtools.HttpClient;
 import io.javalin.testtools.Response;
 import jc121f1.annotations.MiniCloudTest;
 import jc121f1.dagger.DaggerWebserviceComponent;
+import jc121f1.dagger.WebserviceHandlers;
 import jc121f1.model.instance.InstanceState;
 import jc121f1.model.instance.dao.Instance;
 import jc121f1.wbs.WebService;
@@ -31,6 +33,8 @@ import java.util.List;
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class InstanceServiceEndToEndTest {
+    private static final Duration ASYNC_OPERATION_TIMEOUT = Duration.ofMinutes(2);
+    private static final Duration ASYNC_OPERATION_POLL_INTERVAL = Duration.ofSeconds(1);
 
     private Javalin webService;
 
@@ -40,11 +44,12 @@ class InstanceServiceEndToEndTest {
     private Instance createdInstance;
 
     private HttpClient client;
+    private DockerClient dockerClient;
 
     @BeforeAll void beforeAll() {
-        webService = WebService.create(
-                DaggerWebserviceComponent.create()
-        );
+        WebserviceHandlers component = DaggerWebserviceComponent.create();
+        dockerClient = component.dockerClient();
+        webService = WebService.create(component);
 
         webService.start(7070);
 
@@ -56,6 +61,7 @@ class InstanceServiceEndToEndTest {
     }
 
     @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+    @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
     @Order(10)
     @Nested class CreateInstanceBlock {
         Response createResponse;
@@ -105,6 +111,27 @@ class InstanceServiceEndToEndTest {
     }
 
     @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+    @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+    @Order(15)
+    @Nested class DuplicateInstanceBlock {
+        @Test void It_should_reject_a_duplicate_name() {
+            Response duplicateResponse = client.post(
+                    "/instances",
+                    """
+                    {
+                        "name": "e2e-instance",
+                        "cpu": 2,
+                        "memory": 8
+                    }
+                    """
+            );
+
+            Assertions.assertThat(duplicateResponse.code()).isNotEqualTo(200);
+        }
+    }
+
+    @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+    @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
     @Order(20)
     @Nested class ListInstanceBlock {
         Response listResponse;
@@ -135,6 +162,7 @@ class InstanceServiceEndToEndTest {
     }
 
     @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+    @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
     @Order(30)
     @Nested class DescribeInstanceBlock {
         Response describeResponse;
@@ -165,32 +193,57 @@ class InstanceServiceEndToEndTest {
 
             Assertions.assertThat(described).isEqualTo(createdInstance);
         }
-    }
 
-    @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-    @Order(40)
-    @Nested class WaitUntilRunningBlock {
-        @Test void Instance_should_become_running() {
-            Awaitility.await()
-                    .atMost(Duration.ofMinutes(5))
-                    .pollInterval(Duration.ofSeconds(1))
-                    .untilAsserted(() -> {
-                var awaitResponse = client.post(
-                        "/instances/describe",
-                        """
-                                {
-                                    "instanceId": "%s"
-                                }
-                                """.formatted(instanceId));
-                Instance awaitDescribed = OBJECT_MAPPER.readValue(
-                        awaitResponse.body().string(),
-                        Instance.class);
-                Assertions.assertThat(awaitDescribed.getState()).isEqualTo(InstanceState.RUNNING);
-            });
+        @Order(33)
+        @SneakyThrows
+        @Test void It_should_find_the_created_instance_by_name() {
+            Response response = client.post(
+                    "/instances/describe",
+                    """
+                    {
+                        "name": "e2e-instance"
+                    }
+                    """
+            );
+
+            Assertions.assertThat(response.code()).isEqualTo(200);
+            Instance described = OBJECT_MAPPER.readValue(response.body().string(), Instance.class);
+            Assertions.assertThat(described.getId()).isEqualTo(instanceId);
+        }
+
+        @Order(34)
+        @Test void It_should_reject_a_request_without_an_identifier() {
+            Response response = client.post("/instances/describe", "{}");
+
+            Assertions.assertThat(response.code()).isNotEqualTo(200);
+        }
+
+        @Order(35)
+        @Test void It_should_reject_an_unknown_identifier() {
+            Response response = client.post(
+                    "/instances/describe",
+                    """
+                    {
+                        "instanceId": "i-does-not-exist"
+                    }
+                    """
+            );
+
+            Assertions.assertThat(response.code()).isNotEqualTo(200);
         }
     }
 
     @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+    @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+    @Order(40)
+    @Nested class WaitUntilRunningBlock {
+        @Test void Instance_should_become_running() {
+            assertInstanceStateEventually(InstanceState.RUNNING);
+        }
+    }
+
+    @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+    @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
     @Order(50)
     @Nested class StopInstanceBlock {
         Response stopResponse;
@@ -224,26 +277,12 @@ class InstanceServiceEndToEndTest {
         @Order(53)
         @SneakyThrows
         @Test void Instance_should_become_stopped() {
-            Awaitility.await()
-                    .atMost(Duration.ofMinutes(5))
-                    .pollInterval(Duration.ofSeconds(1))
-                    .untilAsserted(() -> {
-                        var awaitResponse = client.post(
-                                "/instances/describe",
-                                """
-                                        {
-                                            "instanceId": "%s"
-                                        }
-                                        """.formatted(instanceId));
-                        Instance awaitDescribed = OBJECT_MAPPER.readValue(
-                                awaitResponse.body().string(),
-                                Instance.class);
-                        Assertions.assertThat(awaitDescribed.getState()).isEqualTo(InstanceState.STOPPED);
-                    });
+            assertInstanceStateEventually(InstanceState.STOPPED);
         }
     }
 
     @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+    @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
     @Order(60)
     @Nested class StartInstanceBlock {
         Response startResponse;
@@ -277,26 +316,26 @@ class InstanceServiceEndToEndTest {
 
         @Order(63)
         @Test void It_should_become_running() {
-            Awaitility.await()
-                    .atMost(Duration.ofMinutes(5))
-                    .pollInterval(Duration.ofSeconds(1))
-                    .untilAsserted(() -> {
-                        var awaitResponse = client.post(
-                                "/instances/describe",
-                                """
-                                        {
-                                            "instanceId": "%s"
-                                        }
-                                        """.formatted(instanceId));
-                        Instance awaitDescribed = OBJECT_MAPPER.readValue(
-                                awaitResponse.body().string(),
-                                Instance.class);
-                        Assertions.assertThat(awaitDescribed.getState()).isEqualTo(InstanceState.RUNNING);
-                    });
+            assertInstanceStateEventually(InstanceState.RUNNING);
+        }
+
+        @Order(64)
+        @Test void It_should_reject_starting_an_already_running_instance() {
+            Response response = client.post(
+                    "/instances/start",
+                    """
+                    {
+                        "instanceId": "%s"
+                    }
+                    """.formatted(instanceId)
+            );
+
+            Assertions.assertThat(response.code()).isNotEqualTo(200);
         }
     }
 
     @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+    @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
     @Order(70)
     @Nested class DeleteInstanceBlock {
         Response deleteResponse;
@@ -319,21 +358,82 @@ class InstanceServiceEndToEndTest {
 
         @Order(72)
         @Test void It_should_delete_instance() {
-            Awaitility.await()
-                    .atMost(Duration.ofMinutes(5))
-                    .pollInterval(Duration.ofSeconds(1))
-                    .untilAsserted(() -> {
-                        var finalListResponse = client.get("/instances");
-                        List<Instance> remaining = OBJECT_MAPPER
-                                .readerForListOf(Instance.class)
-                                .readValue(
-                                        finalListResponse.body().string()
-                                );
-                        Assertions.assertThat(remaining)
-                                .noneMatch(instance ->
-                                        instance.getId().equals(instanceId)
-                                );
-                    });
+            assertInstanceDeletedEventually();
         }
+
+        @Order(73)
+        @Test void It_should_no_longer_be_describable() {
+            Response response = client.post(
+                    "/instances/describe",
+                    """
+                    {
+                        "instanceId": "%s"
+                    }
+                    """.formatted(instanceId)
+            );
+
+            Assertions.assertThat(response.code()).isNotEqualTo(200);
+        }
+
+        @Order(74)
+        @Test void It_should_remove_the_container() {
+            Awaitility.await("container for " + instanceId + " to be removed")
+                    .atMost(ASYNC_OPERATION_TIMEOUT)
+                    .pollInterval(ASYNC_OPERATION_POLL_INTERVAL)
+                    .untilAsserted(() -> Assertions.assertThat(
+                                    dockerClient.listContainersCmd().withShowAll(true).exec()
+                            )
+                            .as("all Docker container names")
+                            .noneMatch(container -> container.getNames() != null
+                                    && java.util.Arrays.stream(container.getNames())
+                                    .anyMatch(name -> name.equals("/MiniCloud-" + instanceId))));
+        }
+    }
+
+    @SneakyThrows
+    private void assertInstanceStateEventually(InstanceState expectedState) {
+        Awaitility.await("instance " + instanceId + " to become " + expectedState)
+                .atMost(ASYNC_OPERATION_TIMEOUT)
+                .pollInterval(ASYNC_OPERATION_POLL_INTERVAL)
+                .untilAsserted(() -> {
+                    Response response = client.post(
+                            "/instances/describe",
+                            """
+                            {
+                                "instanceId": "%s"
+                            }
+                            """.formatted(instanceId)
+                    );
+                    String body = response.body().string();
+
+                    Assertions.assertThat(response.code())
+                            .as("describe response body: %s", body)
+                            .isEqualTo(200);
+                    Instance described = OBJECT_MAPPER.readValue(body, Instance.class);
+                    Assertions.assertThat(described.getState())
+                            .as("describe response body: %s", body)
+                            .isEqualTo(expectedState);
+                });
+    }
+
+    @SneakyThrows
+    private void assertInstanceDeletedEventually() {
+        Awaitility.await("instance " + instanceId + " to be deleted")
+                .atMost(ASYNC_OPERATION_TIMEOUT)
+                .pollInterval(ASYNC_OPERATION_POLL_INTERVAL)
+                .untilAsserted(() -> {
+                    Response response = client.get("/instances");
+                    String body = response.body().string();
+
+                    Assertions.assertThat(response.code())
+                            .as("list response body: %s", body)
+                            .isEqualTo(200);
+                    List<Instance> remaining = OBJECT_MAPPER
+                            .readerForListOf(Instance.class)
+                            .readValue(body);
+                    Assertions.assertThat(remaining)
+                            .as("list response body: %s", body)
+                            .noneMatch(instance -> instance.getId().equals(instanceId));
+                });
     }
 }

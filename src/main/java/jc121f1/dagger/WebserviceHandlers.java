@@ -1,5 +1,6 @@
 package jc121f1.dagger;
 
+import com.github.dockerjava.api.DockerClient;
 import jc121f1.dagger.qualifiers.Debug;
 import jc121f1.dagger.qualifiers.DisableJmDNS;
 import jc121f1.dagger.qualifiers.ExposeShutdownEndpoint;
@@ -29,6 +30,8 @@ public interface WebserviceHandlers {
     StartInstanceHandler startInstanceHandler();
 
     ComputeBackend computeBackend();
+
+    DockerClient dockerClient();
 
     InstanceStore instanceStore();
 
