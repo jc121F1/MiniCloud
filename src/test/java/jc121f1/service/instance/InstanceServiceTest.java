@@ -1,6 +1,7 @@
 package jc121f1.service.instance;
 
 import jc121f1.annotations.MiniCloudTest;
+import jc121f1.model.instance.ComputeStatus;
 import jc121f1.model.instance.InstanceState;
 import jc121f1.model.instance.api.request.CreateInstanceRequest;
 import jc121f1.model.instance.api.request.DeleteInstanceRequest;
@@ -22,6 +23,7 @@ import org.awaitility.Awaitility;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.Spy;
@@ -30,6 +32,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
@@ -59,7 +62,6 @@ public class InstanceServiceTest {
         void setup() {
             instancesById = new ConcurrentHashMap<>();
             idsByName = new ConcurrentHashMap<>();
-            instanceService = new InstanceServiceImpl(clock, computeBackend, eventBus, instanceStore);
             Mockito.lenient().when(computeBackend.start(Mockito.any()))
                     .thenReturn(CompletableFuture.completedFuture(null));
             Mockito.lenient().when(computeBackend.create(Mockito.any()))
@@ -68,6 +70,8 @@ public class InstanceServiceTest {
                     .thenReturn(CompletableFuture.completedFuture(null));
             Mockito.lenient().when(computeBackend.delete(Mockito.any()))
                     .thenReturn(CompletableFuture.completedFuture(null));
+            Mockito.lenient().when(computeBackend.describeStatuses(Mockito.anyList()))
+                    .thenReturn(Map.of());
 
             Mockito.lenient().when(instanceStore.get(Mockito.anyString()))
                     .thenAnswer(invocation -> CompletableFuture.completedFuture(
@@ -111,6 +115,7 @@ public class InstanceServiceTest {
                         idsByName.remove(deleted.getName(), deleted.getId());
                         return CompletableFuture.completedFuture(null);
                     });
+            instanceService = new InstanceServiceImpl(clock, computeBackend, eventBus, instanceStore);
         }
 
         @Nested class When_receiving_a_valid_create_request {
@@ -626,6 +631,124 @@ public class InstanceServiceTest {
 
             Assertions.assertThat(successfulCreates).isEqualTo(1);
             Assertions.assertThat(instanceService.list(new ListInstanceRequest())).hasSize(1);
+        }
+
+        @Nested
+        class When_reconciling_existing_instances {
+
+            @Test
+            void It_should_start_a_running_instance_that_is_stopped_in_compute() {
+                Instance instance = storeExistingInstance(InstanceState.RUNNING);
+
+                reconcile(instance, Map.of(instance.getId(), ComputeStatus.STOPPED));
+
+                Mockito.verify(computeBackend).start(instance);
+                Assertions.assertThat(instancesById.get(instance.getId()).getState())
+                        .isEqualTo(InstanceState.RUNNING);
+            }
+
+            @Test
+            void It_should_recreate_and_start_a_missing_running_instance() {
+                Instance instance = storeExistingInstance(InstanceState.RUNNING);
+
+                reconcile(instance, Map.of(instance.getId(), ComputeStatus.MISSING));
+
+                InOrder inOrder = Mockito.inOrder(computeBackend);
+                inOrder.verify(computeBackend).create(instance);
+                inOrder.verify(computeBackend).start(instance);
+            }
+
+            @Test
+            void It_should_stop_a_stopped_instance_that_is_running_in_compute() {
+                Instance instance = storeExistingInstance(InstanceState.STOPPED);
+
+                reconcile(instance, Map.of(instance.getId(), ComputeStatus.RUNNING));
+
+                Mockito.verify(computeBackend).stop(instance);
+                Assertions.assertThat(instancesById.get(instance.getId()).getState())
+                        .isEqualTo(InstanceState.STOPPED);
+            }
+
+            @Test
+            void It_should_complete_a_start_transition_after_the_compute_instance_is_running() {
+                Instance instance = storeExistingInstance(InstanceState.STARTING);
+
+                reconcile(instance, Map.of(instance.getId(), ComputeStatus.RUNNING));
+
+                Assertions.assertThat(instancesById.get(instance.getId()).getState())
+                        .isEqualTo(InstanceState.RUNNING);
+                Mockito.verify(computeBackend, Mockito.never()).start(instance);
+            }
+
+            @Test
+            void It_should_complete_a_stop_transition_after_stopping_the_compute_instance() {
+                Instance instance = storeExistingInstance(InstanceState.STOPPING);
+
+                reconcile(instance, Map.of(instance.getId(), ComputeStatus.RUNNING));
+
+                Mockito.verify(computeBackend).stop(instance);
+                Assertions.assertThat(instancesById.get(instance.getId()).getState())
+                        .isEqualTo(InstanceState.STOPPED);
+            }
+
+            @Test
+            void It_should_treat_an_omitted_compute_status_as_missing() {
+                Instance instance = storeExistingInstance(InstanceState.RUNNING);
+
+                reconcile(instance, Map.of());
+
+                Mockito.verify(computeBackend).create(instance);
+                Mockito.verify(computeBackend).start(instance);
+            }
+
+            @Test
+            void It_should_mark_an_instance_missing_when_reconciliation_fails() {
+                Instance instance = storeExistingInstance(InstanceState.STARTING);
+                Mockito.when(computeBackend.start(instance))
+                        .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("failure")));
+
+                reconcile(instance, Map.of(instance.getId(), ComputeStatus.STOPPED));
+
+                Assertions.assertThat(instancesById.get(instance.getId()).getState())
+                        .isEqualTo(InstanceState.MISSING);
+            }
+
+            @Test
+            void It_should_not_change_an_instance_already_marked_missing() {
+                Instance instance = storeExistingInstance(InstanceState.MISSING);
+
+                reconcile(instance, Map.of(instance.getId(), ComputeStatus.RUNNING));
+
+                Mockito.verify(computeBackend, Mockito.never()).create(instance);
+                Mockito.verify(computeBackend, Mockito.never()).start(instance);
+                Mockito.verify(computeBackend, Mockito.never()).stop(instance);
+                Assertions.assertThat(instancesById.get(instance.getId()).getState())
+                        .isEqualTo(InstanceState.MISSING);
+            }
+
+            private Instance storeExistingInstance(InstanceState state) {
+                Instance instance = Instance.builder()
+                        .id("i-existing-" + state)
+                        .name("existing-" + state)
+                        .cpu(DEFAULT_CPU)
+                        .memory(DEFAULT_MEMORY)
+                        .state(state)
+                        .createdAt(Instant.parse("2026-01-01T00:00:00Z"))
+                        .build();
+                instancesById.put(instance.getId(), instance);
+                idsByName.put(instance.getName(), instance.getId());
+                return instance;
+            }
+
+            private void reconcile(Instance instance, Map<String, ComputeStatus> statuses) {
+                Mockito.clearInvocations(computeBackend, instanceStore);
+                Mockito.when(instanceStore.list())
+                        .thenReturn(CompletableFuture.completedFuture(List.of(instance)));
+                Mockito.when(computeBackend.describeStatuses(List.of(instance)))
+                        .thenReturn(statuses);
+
+                new InstanceServiceImpl(clock, computeBackend, eventBus, instanceStore);
+            }
         }
 
         @Nested class When_listening_for_events {

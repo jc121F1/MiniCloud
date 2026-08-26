@@ -7,6 +7,7 @@ import io.javalin.testtools.JavalinTest;
 import jc121f1.annotations.MiniCloudTest;
 import jc121f1.dagger.WebserviceHandlers;
 import jc121f1.integration.testdagger.DaggerTestWebserviceComponent;
+import jc121f1.model.instance.ComputeStatus;
 import jc121f1.model.instance.InstanceState;
 import jc121f1.model.instance.dao.Instance;
 import jc121f1.services.instance.compute.ComputeBackend;
@@ -25,6 +26,7 @@ import org.mockito.Mockito;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 @MiniCloudTest
@@ -45,6 +47,21 @@ class InstanceApiIntegrationTest {
 
         instanceStore = component.instanceStore();
 
+        Instance instance = Instance.builder()
+                .name("test-instance")
+                .cpu(2)
+                .memory(1024)
+                .id("i-test")
+                .state(InstanceState.RUNNING)
+                .createdAt(createdAtInstant).build();
+
+        Mockito.when(instanceStore.list())
+                .thenReturn(
+                        CompletableFuture.completedFuture(List.of(instance))
+                );
+
+        Mockito.when(computeBackend.describeStatuses(Mockito.any()))
+                .thenReturn(Map.of(instance.getId(), ComputeStatus.RUNNING));
         app = WebService.create(component);
     }
 
@@ -116,22 +133,6 @@ class InstanceApiIntegrationTest {
 
     @Nested
     class ListInstances {
-
-        @BeforeEach
-        void setup() {
-            Instance instance = Instance.builder()
-                    .name("test-instance")
-                    .cpu(2)
-                    .memory(1024)
-                    .id("i-test")
-                    .state(InstanceState.RUNNING)
-                    .createdAt(createdAtInstant).build();
-
-            Mockito.when(instanceStore.list())
-                    .thenReturn(
-                            CompletableFuture.completedFuture(List.of(instance))
-                    );
-        }
 
         @Test
         void listsInstances() {

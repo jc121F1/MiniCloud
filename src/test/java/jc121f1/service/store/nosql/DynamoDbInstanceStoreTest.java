@@ -1,17 +1,16 @@
 package jc121f1.service.store.nosql;
 
+import jc121f1.annotations.MiniCloudTest;
 import jc121f1.model.instance.dao.Instance;
 import jc121f1.services.instance.store.nosql.DynamoDbInstanceStore;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
 import org.mockito.Mockito;
-import org.mockito.junit.jupiter.MockitoExtension;
 import software.amazon.awssdk.core.async.SdkPublisher;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbAsyncIndex;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbAsyncTable;
@@ -27,7 +26,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.function.Consumer;
 
-@ExtendWith(MockitoExtension.class)
+@MiniCloudTest
 class DynamoDbInstanceStoreTest {
 
     private static final String INSTANCE_ID = "instance-123";

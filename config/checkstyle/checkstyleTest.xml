@@ -70,6 +70,6 @@
             <property name="excludes"
                       value="org.mockito.*"/>
         </module>
-
+        <module name="SuppressionCommentFilter"/>
     </module>
 </module>

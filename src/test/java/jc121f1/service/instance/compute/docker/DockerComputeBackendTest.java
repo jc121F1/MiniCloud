@@ -1,15 +1,21 @@
-package jc121f1.services.instance.compute.docker;
+package jc121f1.service.instance.compute.docker;
 
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.CreateContainerCmd;
 import com.github.dockerjava.api.command.CreateContainerResponse;
+import com.github.dockerjava.api.command.ListContainersCmd;
 import com.github.dockerjava.api.command.RemoveContainerCmd;
 import com.github.dockerjava.api.command.StartContainerCmd;
 import com.github.dockerjava.api.command.StopContainerCmd;
+import com.github.dockerjava.api.model.Container;
 import com.github.dockerjava.api.model.Event;
 import com.github.dockerjava.api.model.HostConfig;
 import jc121f1.annotations.MiniCloudTest;
+import jc121f1.model.instance.ComputeStatus;
 import jc121f1.model.instance.dao.Instance;
+import jc121f1.services.instance.compute.docker.DockerComputeBackend;
+import jc121f1.services.instance.compute.docker.DockerEventListener;
+import jc121f1.services.instance.compute.docker.EventAction;
 import jc121f1.services.instance.events.EventBus;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,10 +24,15 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
+//CHECKSTYLE:OFF
+import static jc121f1.services.instance.compute.docker.DockerComputeBackend.INSTANCE_LABEL_KEY;
+//CHECKSTYLE:ON
 @MiniCloudTest
 public class DockerComputeBackendTest {
 
@@ -55,6 +66,9 @@ public class DockerComputeBackendTest {
     private RemoveContainerCmd removeContainerCmd;
 
     @Mock
+    private ListContainersCmd listContainersCmd;
+
+    @Mock
     private EventBus eventBus;
 
     private Executor executor;
@@ -64,14 +78,11 @@ public class DockerComputeBackendTest {
     @BeforeEach
     void setup() {
         executor = Executors.newVirtualThreadPerTaskExecutor();
-        computeBackend = new DockerComputeBackend(
-                dockerClient,
-                eventListener,
-                eventBus,
-                executor
-        );
+        Mockito.when(dockerClient.listContainersCmd()).thenReturn(listContainersCmd);
+        Mockito.when(listContainersCmd.withShowAll(true)).thenReturn(listContainersCmd);
+        Mockito.when(listContainersCmd.exec()).thenReturn(List.of());
 
-        Mockito.when(instance.getId()).thenReturn(INSTANCE_ID);
+        Mockito.lenient().when(instance.getId()).thenReturn(INSTANCE_ID);
         Mockito.lenient().when(instance.getCpu()).thenReturn(CPU);
         Mockito.lenient().when(instance.memoryInBytes()).thenReturn((long) MEMORY);
     }
@@ -81,6 +92,7 @@ public class DockerComputeBackendTest {
 
         @BeforeEach
         void setup() {
+            computeBackend = newBackend();
             Mockito.when(dockerClient.createContainerCmd("jc121f1/alpine"))
                     .thenReturn(createContainerCmd);
 
@@ -88,6 +100,9 @@ public class DockerComputeBackendTest {
                     .thenReturn(createContainerCmd);
 
             Mockito.when(createContainerCmd.withName("MiniCloud-" + INSTANCE_ID))
+                    .thenReturn(createContainerCmd);
+
+            Mockito.when(createContainerCmd.withLabels(Mockito.any()))
                     .thenReturn(createContainerCmd);
 
             Mockito.when(createContainerCmd.exec())
@@ -128,6 +143,8 @@ public class DockerComputeBackendTest {
 
         @BeforeEach
         void setup() {
+            computeBackend = newBackend();
+
             createContainer();
 
             eventFuture = CompletableFuture.completedFuture(
@@ -192,6 +209,8 @@ public class DockerComputeBackendTest {
 
         @BeforeEach
         void setup() {
+            computeBackend = newBackend();
+
             createContainer();
 
             eventFuture = CompletableFuture.completedFuture(
@@ -253,6 +272,8 @@ public class DockerComputeBackendTest {
 
         @BeforeEach
         void setup() {
+            computeBackend = newBackend();
+
             createContainer();
 
             Mockito.when(dockerClient.removeContainerCmd(CONTAINER_ID))
@@ -260,6 +281,8 @@ public class DockerComputeBackendTest {
 
             Mockito.when(removeContainerCmd.withForce(true))
                     .thenReturn(removeContainerCmd);
+
+            Mockito.when(instance.getId()).thenReturn(INSTANCE_ID);
         }
 
         @Test
@@ -291,6 +314,12 @@ public class DockerComputeBackendTest {
     @Nested
     class When_an_instance_has_no_container {
 
+        @BeforeEach void setup() {
+            computeBackend = newBackend();
+
+            Mockito.when(instance.getId()).thenReturn(INSTANCE_ID);
+        }
+
         @Test
         void Start_should_throw() {
             Assertions.assertThatThrownBy(
@@ -318,6 +347,8 @@ public class DockerComputeBackendTest {
 
         @BeforeEach
         void setup() {
+            computeBackend = newBackend();
+
             createContainer();
 
             Mockito.when(dockerClient.stopContainerCmd(CONTAINER_ID))
@@ -349,6 +380,237 @@ public class DockerComputeBackendTest {
         }
     }
 
+    @Nested
+    class When_reconciling_containers {
+
+        @Test
+        void It_should_discover_a_running_container() {
+            Container container = createDockerContainer(
+                    INSTANCE_ID,
+                    CONTAINER_ID,
+                    "running"
+            );
+
+            Mockito.when(listContainersCmd.exec())
+                    .thenReturn(List.of(container));
+
+            DockerComputeBackend backend = newBackend();
+
+            Assertions.assertThat(
+                    backend.describeStatuses(List.of(instance))
+            ).containsEntry(
+                    INSTANCE_ID,
+                    ComputeStatus.RUNNING
+            );
+        }
+
+        @Test
+        void It_should_discover_a_stopped_container() {
+            Container container = createDockerContainer(
+                    INSTANCE_ID,
+                    CONTAINER_ID,
+                    "exited"
+            );
+
+            Mockito.when(listContainersCmd.exec())
+                    .thenReturn(List.of(container));
+
+            DockerComputeBackend backend = newBackend();
+
+            Assertions.assertThat(
+                    backend.describeStatuses(List.of(instance))
+            ).containsEntry(
+                    INSTANCE_ID,
+                    ComputeStatus.STOPPED
+            );
+        }
+
+        @Test
+        void It_should_include_stopped_containers_in_discovery() {
+            Container container = createDockerContainer(
+                    INSTANCE_ID,
+                    CONTAINER_ID,
+                    "exited"
+            );
+
+            Mockito.when(listContainersCmd.exec())
+                    .thenReturn(List.of(container));
+
+            newBackend();
+
+            Mockito.verify(listContainersCmd)
+                    .withShowAll(true);
+        }
+
+        @Test
+        void It_should_ignore_containers_without_an_instance_label() {
+            Container container = Mockito.mock(Container.class);
+
+            Mockito.when(container.getLabels())
+                    .thenReturn(Map.of());
+
+            Mockito.when(listContainersCmd.exec())
+                    .thenReturn(List.of(container));
+
+            DockerComputeBackend backend = newBackend();
+
+            Assertions.assertThat(
+                    backend.describeStatuses(List.of(instance))
+            ).containsEntry(
+                    INSTANCE_ID,
+                    ComputeStatus.MISSING
+            );
+        }
+
+        @Test
+        void It_should_ignore_containers_for_other_instances() {
+            Container container = createDockerContainer(
+                    "i-other",
+                    "other-container",
+                    "running"
+            );
+
+            Mockito.when(listContainersCmd.exec())
+                    .thenReturn(List.of(container));
+
+            DockerComputeBackend backend = newBackend();
+
+            Assertions.assertThat(
+                    backend.describeStatuses(List.of(instance))
+            ).containsEntry(
+                    INSTANCE_ID,
+                    ComputeStatus.MISSING
+            );
+        }
+
+        @Test
+        void It_should_discover_multiple_containers() {
+            String secondInstanceId = "i-456";
+
+            Instance secondInstance = Mockito.mock(Instance.class);
+            Mockito.when(secondInstance.getId())
+                    .thenReturn(secondInstanceId);
+
+            Container runningContainer = createDockerContainer(
+                    INSTANCE_ID,
+                    CONTAINER_ID,
+                    "running"
+            );
+
+            Container stoppedContainer = createDockerContainer(
+                    secondInstanceId,
+                    "container-456",
+                    "exited"
+            );
+
+            Mockito.when(listContainersCmd.exec())
+                    .thenReturn(List.of(
+                            runningContainer,
+                            stoppedContainer
+                    ));
+
+            DockerComputeBackend backend = newBackend();
+
+            Assertions.assertThat(
+                    backend.describeStatuses(
+                            List.of(instance, secondInstance)
+                    )
+            ).containsExactlyInAnyOrderEntriesOf(
+                    Map.of(
+                            INSTANCE_ID,
+                            ComputeStatus.RUNNING,
+                            secondInstanceId,
+                            ComputeStatus.STOPPED
+                    )
+            );
+        }
+
+        @Test
+        void It_should_restore_the_container_mapping() {
+            Container container = createDockerContainer(
+                    INSTANCE_ID,
+                    CONTAINER_ID,
+                    "running"
+            );
+
+            Mockito.when(listContainersCmd.exec())
+                    .thenReturn(List.of(container));
+
+            DockerComputeBackend backend = newBackend();
+
+            Mockito.when(dockerClient.startContainerCmd(CONTAINER_ID))
+                    .thenReturn(startContainerCmd);
+
+            Mockito.when(eventListener.waitFor(
+                    CONTAINER_ID,
+                    EventAction.START
+            )).thenReturn(
+                    CompletableFuture.completedFuture(
+                            Mockito.mock(Event.class)
+                    )
+            );
+
+            backend.start(instance).join();
+
+            Mockito.verify(dockerClient)
+                    .startContainerCmd(CONTAINER_ID);
+
+            Mockito.verify(startContainerCmd)
+                    .exec();
+        }
+
+        @Test
+        void It_should_report_an_unknown_instance_as_missing() {
+            Mockito.when(listContainersCmd.exec())
+                    .thenReturn(List.of());
+
+            DockerComputeBackend backend = newBackend();
+
+            Assertions.assertThat(
+                    backend.describeStatuses(List.of(instance))
+            ).containsEntry(
+                    INSTANCE_ID,
+                    ComputeStatus.MISSING
+            );
+        }
+    }
+
+    private DockerComputeBackend newBackend() {
+        return new DockerComputeBackend(
+                dockerClient,
+                eventListener,
+                eventBus,
+                executor
+        );
+    }
+
+    private Container createDockerContainer(
+            String instanceId,
+            String containerId,
+            String state) {
+
+        Container container = Mockito.mock(Container.class);
+
+        Mockito.when(container.getId())
+                .thenReturn(containerId);
+
+        Mockito.when(container.getNames())
+                .thenReturn(new String[]{
+                        "MiniCloud-" + instanceId
+                });
+
+        Mockito.when(container.getLabels())
+                .thenReturn(Map.of(
+                        INSTANCE_LABEL_KEY,
+                        instanceId
+                ));
+
+        Mockito.when(container.getState())
+                .thenReturn(state);
+
+        return container;
+    }
+
     private void createContainer() {
         Mockito.when(dockerClient.createContainerCmd("jc121f1/alpine"))
                 .thenReturn(createContainerCmd);
@@ -361,6 +623,9 @@ public class DockerComputeBackendTest {
 
         Mockito.when(createContainerCmd.exec())
                 .thenReturn(createContainerResponse);
+
+        Mockito.when(createContainerCmd.withLabels(Mockito.any()))
+                .thenReturn(createContainerCmd);
 
         Mockito.when(createContainerResponse.getId())
                 .thenReturn(CONTAINER_ID);

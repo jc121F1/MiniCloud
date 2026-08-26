@@ -10,18 +10,22 @@ import jc121f1.model.instance.api.request.StartInstanceRequest;
 import jc121f1.model.instance.api.request.StopInstanceRequest;
 import jc121f1.model.instance.dao.Instance;
 import jc121f1.services.instance.compute.ComputeBackend;
+import jc121f1.model.instance.ComputeStatus;
 import jc121f1.services.instance.compute.docker.EventAction;
 import jc121f1.services.instance.events.EventBus;
 import jc121f1.services.instance.events.InstanceHealthEvent;
 import jc121f1.services.instance.store.InstanceStore;
+import lombok.extern.slf4j.Slf4j;
 
 import javax.inject.Inject;
 import java.time.Clock;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
+@Slf4j
 public class InstanceServiceImpl implements InstanceService {
     private final Clock clock;
 
@@ -48,6 +52,10 @@ public class InstanceServiceImpl implements InstanceService {
         this.instanceStore = instanceStore;
 
         this.registerHealthEvents();
+        reconcileExistingInstances().exceptionally(error -> {
+            log.warn("Unable to reconcile existing instances during startup", error);
+            return null;
+        });
     }
 
     private void registerHealthEvents() {
@@ -247,5 +255,104 @@ public class InstanceServiceImpl implements InstanceService {
                         .state(state)
                         .build()
         );
+    }
+
+    private CompletableFuture<Void> reconcileExistingInstances() {
+        return instanceStore.list().thenCompose(instances -> {
+            if (instances.isEmpty()) {
+                return CompletableFuture.completedFuture(null);
+            }
+            Map<String, ComputeStatus> statuses = computeBackend.describeStatuses(instances);
+            return CompletableFuture.allOf(
+                                instances.stream()
+                                        .map(instance -> {
+                                            ComputeStatus status =
+                                                    statuses.getOrDefault(
+                                                            instance.getId(),
+                                                            ComputeStatus.MISSING);
+
+                                            return switch (instance.getState()) {
+                                                case RUNNING ->
+                                                        reconcileRunning(instance, status);
+                                                case STOPPED ->
+                                                        reconcileStopped(instance, status);
+                                                case STARTING ->
+                                                        reconcileStarting(instance, status);
+                                                case STOPPING ->
+                                                        reconcileStopping(instance, status);
+                                                case MISSING ->
+                                                        reconcileMissing(instance, status);
+                                            };
+                                        })
+                                        .toArray(CompletableFuture[]::new)
+                        );
+        });
+    }
+
+    private CompletableFuture<Void> reconcileRunning(Instance instance, ComputeStatus status) {
+        return reconcileToRunning(instance, status)
+                .exceptionally(error -> markInstanceMissing(instance, error));
+    }
+
+    private CompletableFuture<Void> reconcileStopped(Instance instance, ComputeStatus status) {
+        return reconcileToStopped(instance, status)
+                .exceptionally(error -> markInstanceMissing(instance, error));
+    }
+
+    private CompletableFuture<Void> reconcileToRunning(Instance instance, ComputeStatus status) {
+        switch (status) {
+            case MISSING -> {
+                return createInstance(instance)
+                        .thenCompose(ignored -> computeBackend.start(instance));
+            }
+            case STOPPED -> {
+                return computeBackend.start(instance);
+            }
+            default -> {
+                return CompletableFuture.completedFuture(null);
+            }
+        }
+    }
+
+    private CompletableFuture<Void> reconcileStarting(
+            Instance instance,
+            ComputeStatus status) {
+
+        return reconcileToRunning(instance, status)
+                .thenRun(() -> setInstanceState(instance, InstanceState.RUNNING))
+                .exceptionally(error -> markInstanceMissing(instance, error));
+    }
+
+    private CompletableFuture<Void> reconcileStopping(
+            Instance instance,
+            ComputeStatus status) {
+
+        return reconcileToStopped(instance, status)
+                .thenRun(() -> setInstanceState(instance, InstanceState.STOPPED))
+                .exceptionally(error -> markInstanceMissing(instance, error));
+    }
+
+    private CompletableFuture<Void> reconcileMissing(Instance instance, ComputeStatus status) {
+        return CompletableFuture.completedFuture(null);
+    }
+
+    private CompletableFuture<Void> reconcileToStopped(Instance instance, ComputeStatus status) {
+        switch (status) {
+            case MISSING -> {
+                return createInstance(instance);
+            }
+            case RUNNING -> {
+                return computeBackend.stop(instance);
+            }
+            default -> {
+                return CompletableFuture.completedFuture(null);
+            }
+        }
+    }
+
+    private Void markInstanceMissing(Instance instance, Throwable error) {
+        log.warn("Failed to reconcile instance {}", instance.getId(), error);
+        setInstanceState(instance, InstanceState.MISSING);
+        return null;
     }
 }
