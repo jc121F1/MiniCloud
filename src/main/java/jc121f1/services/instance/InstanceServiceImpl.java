@@ -14,6 +14,9 @@ import jc121f1.model.instance.ComputeStatus;
 import jc121f1.services.instance.compute.docker.EventAction;
 import jc121f1.services.instance.events.EventBus;
 import jc121f1.services.instance.events.InstanceHealthEvent;
+import jc121f1.services.instance.exceptions.ConflictException;
+import jc121f1.services.instance.exceptions.ResourceNotFoundException;
+import jc121f1.services.instance.exceptions.ValidationException;
 import jc121f1.services.instance.store.InstanceStore;
 import lombok.extern.slf4j.Slf4j;
 
@@ -66,14 +69,14 @@ public class InstanceServiceImpl implements InstanceService {
     public Instance get(GetInstanceRequest request) {
 
         if (!request.hasIdentifier()) {
-            throw new IllegalArgumentException(
+            throw new ValidationException(
                     "GetInstanceRequest must contain one of [\"name\" or \"instanceId\"]");
         } else if (request.hasInstanceId()) {
             return instanceStore.get(request.getInstanceId()).join()
-                    .orElseThrow(() -> new IllegalStateException("Instance not found " + request.getInstanceId()));
+                    .orElseThrow(() -> new ResourceNotFoundException("Instance not found " + request.getInstanceId()));
         } else {
             return instanceStore.getByName(request.getName()).join()
-                    .orElseThrow(() -> new IllegalStateException("Instance not found " + request.getName()));
+                    .orElseThrow(() -> new ResourceNotFoundException("Instance not found " + request.getName()));
         }
     }
 
@@ -83,7 +86,7 @@ public class InstanceServiceImpl implements InstanceService {
         return instance.orElseGet(() -> instanceStore.getByName(identifier)
                 .join()
                 .orElseThrow(() ->
-                        new IllegalStateException(
+                        new ResourceNotFoundException(
                                 "Instance not found: " + identifier
                         )
                 ));
@@ -133,7 +136,7 @@ public class InstanceServiceImpl implements InstanceService {
         String identifier;
 
         if (request.getInstanceId() == null && request.getName() == null) {
-            throw new IllegalArgumentException(
+            throw new ValidationException(
                     "DeleteInstanceRequest must contain one of [\"name\" or \"instanceId\"]");
         } else if (request.getInstanceId() != null) {
             identifier = request.getInstanceId();
@@ -155,7 +158,7 @@ public class InstanceServiceImpl implements InstanceService {
         String identifier;
 
         if (request.getInstanceId() == null && request.getName() == null) {
-            throw new IllegalArgumentException(
+            throw new ValidationException(
                     "StopInstanceRequest must contain one of [\"name\" or \"instanceId\"]");
         } else if (request.getInstanceId() != null) {
             identifier = request.getInstanceId();
@@ -167,7 +170,7 @@ public class InstanceServiceImpl implements InstanceService {
         if (stop.getState().isStoppable()) {
             stop = setInstanceState(stop, InstanceState.STOPPING);
         } else {
-            throw new IllegalArgumentException(
+            throw new ConflictException(
                     "Instance {" + identifier + "} is not in a startable state. " +
                             "Current state is {" + stop.getState() + "}");
         }
@@ -182,7 +185,7 @@ public class InstanceServiceImpl implements InstanceService {
         String identifier;
 
         if (request.getInstanceId() == null && request.getName() == null) {
-            throw new IllegalArgumentException(
+            throw new ValidationException(
                     "StopInstanceRequest must contain one of [\"name\" or \"instanceId\"]");
         } else if (request.getInstanceId() != null) {
             identifier = request.getInstanceId();
@@ -193,7 +196,7 @@ public class InstanceServiceImpl implements InstanceService {
         if (start.getState().isStartable()) {
             start = setInstanceState(start, InstanceState.STARTING);
         } else {
-            throw new IllegalArgumentException(
+            throw new ConflictException(
                     "Instance {" + identifier + "} is not in a startable state. " +
                             "Current state is {" + start.getState() + "}");
         }
