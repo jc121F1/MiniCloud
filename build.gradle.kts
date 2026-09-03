@@ -48,7 +48,7 @@ dependencies {
     implementation("software.amazon.awssdk:dynamodb-enhanced")
     runtimeOnly("ch.qos.logback:logback-classic:1.5.18")
 
-    testImplementation(platform("org.junit:junit-bom:5.13.4"))
+    testImplementation(platform("org.junit:junit-bom:6.1.3"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testImplementation("org.assertj:assertj-core:3.27.7")
     testImplementation("org.mockito:mockito-junit-jupiter:5.12.0")
