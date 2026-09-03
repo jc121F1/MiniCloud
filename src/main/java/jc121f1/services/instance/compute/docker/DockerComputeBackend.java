@@ -150,7 +150,7 @@ public class DockerComputeBackend implements ComputeBackend {
 
         instanceToContainer.values().stream().map(DockerContainer::getId).forEach(containerId -> {
             try {
-                log.info("Closing container " + containerId);
+                log.info("Closing container {}", containerId);
                 dockerClient.stopContainerCmd(containerId).exec();
                 dockerClient.removeContainerCmd(containerId).withForce(true).exec();
             } catch (Exception e) {
@@ -164,7 +164,7 @@ public class DockerComputeBackend implements ComputeBackend {
 
     private String getContainerId(Instance instance) {
         Optional<DockerContainer> container = Optional.ofNullable(instanceToContainer.get(instance.getId()));
-        String containerId = container.isPresent() ? container.get().getId() : null;
+        String containerId = container.map(DockerContainer::getId).orElse(null);
 
         if (containerId == null) {
             throw new IllegalStateException(

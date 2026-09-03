@@ -16,7 +16,7 @@ public class StopInstanceHandler extends InstanceHandler {
     }
 
     @Override
-    public void handle(@NotNull Context ctx) throws Exception {
+    public void handle(@NotNull Context ctx) {
         StopInstanceRequest request = ctx.bodyAsClass(StopInstanceRequest.class);
 
         Instance instance = instanceService.stop(request);
