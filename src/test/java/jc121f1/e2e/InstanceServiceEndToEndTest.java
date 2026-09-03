@@ -6,11 +6,11 @@ import io.javalin.Javalin;
 import io.javalin.testtools.HttpClient;
 import io.javalin.testtools.Response;
 import jc121f1.annotations.MiniCloudTest;
-import jc121f1.dagger.DaggerWebserviceComponent;
-import jc121f1.dagger.WebserviceHandlers;
+import jc121f1.dagger.instance.DaggerInstanceWebServiceComponent;
+import jc121f1.dagger.instance.InstanceWebServiceComponent;
 import jc121f1.model.instance.InstanceState;
 import jc121f1.model.instance.dao.Instance;
-import jc121f1.wbs.WebService;
+import jc121f1.wbs.services.InstanceWebService;
 import lombok.SneakyThrows;
 import org.assertj.core.api.Assertions;
 import org.awaitility.Awaitility;
@@ -47,9 +47,9 @@ class InstanceServiceEndToEndTest {
     private DockerClient dockerClient;
 
     @BeforeAll void beforeAll() {
-        WebserviceHandlers component = DaggerWebserviceComponent.create();
+        InstanceWebServiceComponent component = DaggerInstanceWebServiceComponent.create();
         dockerClient = component.dockerClient();
-        webService = WebService.create(component);
+        webService = new InstanceWebService(component).create();
 
         webService.start(7070);
 

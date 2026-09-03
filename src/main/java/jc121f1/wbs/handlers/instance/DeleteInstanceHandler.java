@@ -1,10 +1,9 @@
-package jc121f1.wbs.handlers.delete;
+package jc121f1.wbs.handlers.instance;
 
 import io.javalin.http.Context;
 import jc121f1.model.instance.api.request.DeleteInstanceRequest;
 import jc121f1.model.instance.dao.Instance;
 import jc121f1.services.instance.InstanceService;
-import jc121f1.wbs.handlers.InstanceHandler;
 import org.jetbrains.annotations.NotNull;
 
 import javax.inject.Inject;

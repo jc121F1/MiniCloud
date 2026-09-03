@@ -5,14 +5,14 @@ import com.fasterxml.jackson.databind.ObjectReader;
 import io.javalin.Javalin;
 import io.javalin.testtools.JavalinTest;
 import jc121f1.annotations.MiniCloudTest;
-import jc121f1.dagger.WebserviceHandlers;
-import jc121f1.integration.testdagger.DaggerTestWebserviceComponent;
+import jc121f1.dagger.instance.InstanceWebServiceComponent;
+import jc121f1.integration.testdagger.DaggerTestInstanceWebServiceComponent;
 import jc121f1.model.instance.ComputeStatus;
 import jc121f1.model.instance.InstanceState;
 import jc121f1.model.instance.dao.Instance;
 import jc121f1.services.instance.compute.ComputeBackend;
 import jc121f1.services.instance.store.InstanceStore;
-import jc121f1.wbs.WebService;
+import jc121f1.wbs.services.InstanceWebService;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,8 +40,8 @@ class InstanceApiIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        WebserviceHandlers component =
-                DaggerTestWebserviceComponent.create();
+        InstanceWebServiceComponent component =
+                DaggerTestInstanceWebServiceComponent.create();
 
         computeBackend = component.computeBackend();
 
@@ -62,7 +62,7 @@ class InstanceApiIntegrationTest {
 
         Mockito.when(computeBackend.describeStatuses(Mockito.any()))
                 .thenReturn(Map.of(instance.getId(), ComputeStatus.RUNNING));
-        app = WebService.create(component);
+        app = new InstanceWebService(component).create();
     }
 
     @AfterEach

@@ -1,4 +1,4 @@
-package jc121f1.wbs.exceptions;
+package jc121f1.wbs.exceptions.customererrors;
 
 public class ResourceNotFoundError extends CustomerFacingError {
     public ResourceNotFoundError(String message) {

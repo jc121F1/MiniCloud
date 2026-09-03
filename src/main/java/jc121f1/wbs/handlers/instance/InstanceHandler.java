@@ -1,7 +1,8 @@
-package jc121f1.wbs.handlers;
+package jc121f1.wbs.handlers.instance;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import jc121f1.services.instance.InstanceService;
+import jc121f1.wbs.handlers.BaseHandler;
 
 public abstract class InstanceHandler implements BaseHandler {
     @SuppressFBWarnings(
