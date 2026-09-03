@@ -7,7 +7,7 @@ import io.javalin.testtools.HttpClient;
 import io.javalin.testtools.Response;
 import jc121f1.annotations.MiniCloudTest;
 import jc121f1.dagger.DaggerWebserviceComponent;
-import jc121f1.dagger.WebserviceHandlers;
+import jc121f1.dagger.WebserviceComponent;
 import jc121f1.model.instance.InstanceState;
 import jc121f1.model.instance.dao.Instance;
 import jc121f1.wbs.WebService;
@@ -47,7 +47,7 @@ class InstanceServiceEndToEndTest {
     private DockerClient dockerClient;
 
     @BeforeAll void beforeAll() {
-        WebserviceHandlers component = DaggerWebserviceComponent.create();
+        WebserviceComponent component = DaggerWebserviceComponent.create();
         dockerClient = component.dockerClient();
         webService = WebService.create(component);
 

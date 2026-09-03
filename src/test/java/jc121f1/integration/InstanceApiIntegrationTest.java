@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.ObjectReader;
 import io.javalin.Javalin;
 import io.javalin.testtools.JavalinTest;
 import jc121f1.annotations.MiniCloudTest;
-import jc121f1.dagger.WebserviceHandlers;
+import jc121f1.dagger.WebserviceComponent;
 import jc121f1.integration.testdagger.DaggerTestWebserviceComponent;
 import jc121f1.model.instance.ComputeStatus;
 import jc121f1.model.instance.InstanceState;
@@ -40,7 +40,7 @@ class InstanceApiIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        WebserviceHandlers component =
+        WebserviceComponent component =
                 DaggerTestWebserviceComponent.create();
 
         computeBackend = component.computeBackend();

@@ -3,7 +3,6 @@ package jc121f1.wbs;
 import io.javalin.Javalin;
 import jc121f1.dagger.DaggerWebserviceComponent;
 import jc121f1.dagger.WebserviceComponent;
-import jc121f1.dagger.WebserviceHandlers;
 import jc121f1.services.instance.compute.ComputeBackend;
 import jc121f1.wbs.exceptions.MiniCloudExceptionMapper;
 import jc121f1.wbs.handlers.debug.ShutdownHandler;
@@ -31,7 +30,7 @@ import static io.javalin.apibuilder.ApiBuilder.post;
         private static String HOSTNAME = "instance";
         private static int PORT = 7070;
 
-        public static Javalin create(WebserviceHandlers component) {
+        public static Javalin create(WebserviceComponent component) {
             RootHandler rootHandler = component.rootHandler();
             GetInstanceHandler getInstanceHandler = component.getInstanceHandler();
             ListInstanceHandler listInstanceHandler = component.listInstanceHandler();
