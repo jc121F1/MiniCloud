@@ -39,7 +39,7 @@ dependencies {
     implementation("io.javalin:javalin:7.2.3")
     implementation("com.google.dagger:dagger:2.60.1")
     implementation("org.slf4j:slf4j-api:2.0.17")
-    implementation("com.fasterxml.jackson.core:jackson-databind:2.22.1")
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.22.2")
     implementation("com.github.docker-java:docker-java:3.7.1")
     implementation("org.jmdns:jmdns:3.6.3")
     implementation("com.github.docker-java:docker-java-transport-httpclient5:3.7.1")
