@@ -58,7 +58,7 @@ dependencies {
     mockitoAgent("org.mockito:mockito-core:5.19.0")  { isTransitive = false }
 
     annotationProcessor("com.google.dagger:dagger-compiler:2.60.1")
-    testAnnotationProcessor("com.google.dagger:dagger-compiler:2.57.2")
+    testAnnotationProcessor("com.google.dagger:dagger-compiler:2.60.1")
 }
 tasks {
     test {
