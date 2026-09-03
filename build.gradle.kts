@@ -46,6 +46,7 @@ dependencies {
     implementation(platform("software.amazon.awssdk:bom:2.54.+"))
     implementation("software.amazon.awssdk:dynamodb")
     implementation("software.amazon.awssdk:dynamodb-enhanced")
+    implementation("org.bouncycastle:bcpkix-jdk18on:1.85")
     runtimeOnly("ch.qos.logback:logback-classic:1.6.3")
 
     testImplementation(platform("org.junit:junit-bom:6.1.3"))
@@ -98,7 +99,6 @@ tasks.build {
             .resolve("index.html")
 
         println()
-        println("JaCoCo coverage report:")
         println(report.toURI())
     }
 }
