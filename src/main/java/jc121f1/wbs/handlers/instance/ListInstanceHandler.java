@@ -17,7 +17,7 @@ public class ListInstanceHandler extends InstanceHandler {
     }
 
     @Override
-    public void handle(@NotNull Context ctx) throws Exception {
+    public void handle(@NotNull Context ctx) {
         ListInstanceRequest request = new ListInstanceRequest();
 
         List<Instance> instances = instanceService.list(request);

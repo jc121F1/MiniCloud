@@ -16,7 +16,7 @@ public class DeleteInstanceHandler extends InstanceHandler {
     }
 
     @Override
-    public void handle(@NotNull Context ctx) throws Exception {
+    public void handle(@NotNull Context ctx) {
         DeleteInstanceRequest request = ctx.bodyAsClass(DeleteInstanceRequest.class);
 
         Instance instance = instanceService.delete(request);

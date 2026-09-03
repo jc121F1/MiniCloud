@@ -97,15 +97,15 @@ The service is implemented using Javalin and listens on port **7070** by default
 
 Current routes include:
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/` | Service/root endpoint |
-| `GET` | `/instances` | List instances |
-| `POST` | `/instances` | Create an instance |
-| `POST` | `/instances/delete` | Delete an instance |
-| `POST` | `/instances/start` | Start an instance |
-| `POST` | `/instances/stop` | Stop an instance |
-| `POST` | `/instances/describe` | Describe an instance |
+| Method | Endpoint              | Description           |
+|--------|-----------------------|-----------------------|
+| `GET`  | `/`                   | Service/root endpoint |
+| `GET`  | `/instances`          | List instances        |
+| `POST` | `/instances`          | Create an instance    |
+| `POST` | `/instances/delete`   | Delete an instance    |
+| `POST` | `/instances/start`    | Start an instance     |
+| `POST` | `/instances/stop`     | Stop an instance      |
+| `POST` | `/instances/describe` | Describe an instance  |
 
 An optional shutdown endpoint is also available for development/debug configurations.
 
@@ -143,22 +143,22 @@ The Gradle build generates a JaCoCo coverage report and treats Checkstyle and Sp
 
 ## Technology Stack
 
-| Component | Technology |
-|---|---|
-| Language | Java 25 |
-| Build | Gradle |
-| Web framework | Javalin |
-| Dependency injection | Dagger |
-| Persistence | Amazon DynamoDB |
-| Compute | Docker |
-| JSON | Jackson |
-| Service discovery | JmDNS |
-| Logging | SLF4J + Logback |
-| Testing | JUnit 5, Mockito, AssertJ |
-| Coverage | JaCoCo |
-| Static analysis | SpotBugs |
-| Style checking | Checkstyle |
-| CI | GitHub Actions |
+| Component            | Technology                |
+|----------------------|---------------------------|
+| Language             | Java 25                   |
+| Build                | Gradle                    |
+| Web framework        | Javalin                   |
+| Dependency injection | Dagger                    |
+| Persistence          | Amazon DynamoDB           |
+| Compute              | Docker                    |
+| JSON                 | Jackson                   |
+| Service discovery    | JmDNS                     |
+| Logging              | SLF4J + Logback           |
+| Testing              | JUnit 5, Mockito, AssertJ |
+| Coverage             | JaCoCo                    |
+| Static analysis      | SpotBugs                  |
+| Style checking       | Checkstyle                |
+| CI                   | GitHub Actions            |
 
 ## Requirements
 

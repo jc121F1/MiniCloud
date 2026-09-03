@@ -289,7 +289,7 @@ public class DynamoDbInstanceStore implements InstanceStore {
                     .handle((_, createError) -> {
                         if (createError == null) {
                             log.info("Table {} created.", TABLE_NAME);
-                            return (Void) null;
+                            return null;
                         }
 
                         Throwable createCause = unwrap(createError);

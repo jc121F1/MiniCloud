@@ -1,4 +1,4 @@
-package jc121f1.services.instance.compute.docker;
+package jc121f1.service.instance.compute.docker;
 
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.async.ResultCallback;
@@ -6,6 +6,8 @@ import com.github.dockerjava.api.command.EventsCmd;
 import com.github.dockerjava.api.model.Event;
 import com.github.dockerjava.api.model.EventActor;
 import jc121f1.annotations.MiniCloudTest;
+import jc121f1.services.instance.compute.docker.DockerEventListener;
+import jc121f1.services.instance.compute.docker.EventAction;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;

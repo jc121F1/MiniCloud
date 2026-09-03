@@ -1,8 +1,11 @@
 package jc121f1.services.instance.compute.docker;
 
+import lombok.Getter;
+
 import java.util.Arrays;
 import java.util.Optional;
 
+@Getter
 public enum EventAction {
 
     START("start"),
@@ -14,10 +17,6 @@ public enum EventAction {
 
     EventAction(String value) {
         this.value = value;
-    }
-
-    public String getValue() {
-        return value;
     }
 
     public static Optional<EventAction> fromValue(String value) {

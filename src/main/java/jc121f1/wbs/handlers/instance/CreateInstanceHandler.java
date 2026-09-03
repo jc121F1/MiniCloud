@@ -16,7 +16,7 @@ public class CreateInstanceHandler extends InstanceHandler {
     }
 
     @Override
-    public void handle(@NotNull Context ctx) throws Exception {
+    public void handle(@NotNull Context ctx) {
         CreateInstanceRequest request = ctx.bodyAsClass(CreateInstanceRequest.class);
 
         Instance instance = instanceService.create(request);

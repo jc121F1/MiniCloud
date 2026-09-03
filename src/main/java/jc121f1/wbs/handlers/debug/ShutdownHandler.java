@@ -9,7 +9,7 @@ public class ShutdownHandler implements BaseHandler {
     public ShutdownHandler() {
     }
     @Override
-    public void handle(@NotNull Context ctx) throws Exception {
+    public void handle(@NotNull Context ctx) {
         //WebService.stop();
         ctx.json("OK");
     }
