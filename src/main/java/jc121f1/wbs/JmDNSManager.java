@@ -2,32 +2,46 @@ package jc121f1.wbs;
 
 import lombok.extern.slf4j.Slf4j;
 
+import javax.inject.Inject;
 import javax.jmdns.JmDNS;
 import javax.jmdns.ServiceInfo;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 @Slf4j
 public class JmDNSManager {
 
-    public static JmDNS startMdns(String hostname, int port) {
+    private final Map<String, JmDNS> jmDNSMap = new HashMap<>();
+
+    @Inject
+    public JmDNSManager() {
+
+    }
+
+    public void startMdns(String hostName, int port) {
+        if (jmDNSMap.get(hostName) != null) {
+            log.warn("Failed to start mDNS for {} on port {} as an entry already exists in this manager",
+                    hostName, port);
+        }
         try {
             InetAddress address = selectAddress();
-            JmDNS jmdns = JmDNS.create(address, hostname);
-            log.info("mDNS hostname published: {}.local -> {}", hostname, address.getHostAddress());
-            ServiceInfo service = ServiceInfo.create("_http._tcp.local.", hostname, port, "path=/");
+            JmDNS jmdns = JmDNS.create(address, hostName);
+            log.info("mDNS hostname published: {}.local -> {}", hostName, address.getHostAddress());
+            ServiceInfo service = ServiceInfo.create("_http._tcp.local.", hostName, port, "path=/");
             jmdns.registerService(service);
-            log.info("mDNS service registered: {} (_http._tcp) on port {}", hostname, port);
-            return jmdns;
+            log.info("mDNS service registered: {} (_http._tcp) on port {}", hostName, port);
+            jmDNSMap.put(hostName, jmdns);
         } catch (Exception e) {
             log.warn("Failed to start mDNS responder", e);
-            return null;
         }
     }
 
-    public static void stopMdns(JmDNS jmdns) {
+    public void stopMdns(String hostName) {
+        JmDNS jmdns = jmDNSMap.get(hostName);
         if (jmdns == null) {
             return;
         }
@@ -40,7 +54,7 @@ public class JmDNSManager {
     }
 
     // Pick a real LAN interface; InetAddress.getLocalHost() can resolve to loopback, which breaks mDNS multicast.
-    public static InetAddress selectAddress() throws Exception {
+    public InetAddress selectAddress() throws Exception {
         for (NetworkInterface ni : Collections.list(NetworkInterface.getNetworkInterfaces())) {
             if (!ni.isUp() || ni.isLoopback() || ni.isVirtual() || ni.isPointToPoint()) {
                 continue;

@@ -1,7 +1,6 @@
-package jc121f1.wbs.handlers.get;
+package jc121f1.wbs.handlers;
 
 import io.javalin.http.Context;
-import jc121f1.wbs.handlers.BaseHandler;
 import org.jetbrains.annotations.NotNull;
 
 import javax.inject.Inject;

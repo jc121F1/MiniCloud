@@ -1,6 +1,11 @@
 package jc121f1.wbs.exceptions;
 
 import io.javalin.http.Context;
+import jc121f1.wbs.exceptions.customererrors.ConflictError;
+import jc121f1.wbs.exceptions.customererrors.CustomerFacingError;
+import jc121f1.wbs.exceptions.customererrors.InternalServerError;
+import jc121f1.wbs.exceptions.customererrors.ResourceNotFoundError;
+import jc121f1.wbs.exceptions.customererrors.ValidationError;
 
 
 import javax.inject.Inject;
