@@ -5,6 +5,7 @@ import jc121f1.dagger.DaggerWebserviceComponent;
 import jc121f1.dagger.WebserviceComponent;
 import jc121f1.dagger.WebserviceHandlers;
 import jc121f1.services.instance.compute.ComputeBackend;
+import jc121f1.wbs.exceptions.MiniCloudExceptionMapper;
 import jc121f1.wbs.handlers.debug.ShutdownHandler;
 import jc121f1.wbs.handlers.delete.DeleteInstanceHandler;
 import jc121f1.wbs.handlers.get.GetInstanceHandler;
@@ -42,7 +43,9 @@ import static io.javalin.apibuilder.ApiBuilder.post;
             //Boolean debug = component.debug();
             Boolean disableJmDNS = component.disableJmDNS();
             Boolean exposeShutdownEndpoint = component.shutdownEndpoint();
+            MiniCloudExceptionMapper exceptionMapper = component.exceptionMapper();
             return Javalin.create(config -> {
+                config.routes.exception(Exception.class, exceptionMapper::mapException);
                 config.events.serverStarted(() -> {
                     if (!disableJmDNS) {
                         jmdns = JmDNSManager.startMdns(HOSTNAME, PORT);
