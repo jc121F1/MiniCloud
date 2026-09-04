@@ -17,6 +17,7 @@ import jc121f1.services.instance.InstanceServiceImpl;
 import jc121f1.services.instance.compute.ComputeBackend;
 import jc121f1.services.instance.compute.docker.DockerComputeBackend;
 import jc121f1.services.instance.compute.docker.DockerEventListener;
+import jc121f1.services.instance.events.EventBus;
 import jc121f1.services.instance.store.InstanceStore;
 import jc121f1.services.instance.store.nosql.DynamoDbInstanceStore;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
@@ -68,8 +69,11 @@ public abstract class InstanceServiceModule {
     }
 
     @Provides @Singleton
-    public static DockerEventListener eventListener(DockerClient dockerClient) {
-        return new DockerEventListener(dockerClient);
+    public static DockerEventListener eventListener(
+            DockerClient dockerClient,
+            EventBus eventBus
+    ) {
+        return new DockerEventListener(dockerClient, eventBus);
     }
 
     @Provides

@@ -13,6 +13,7 @@ import jc121f1.model.instance.dao.Instance;
 import jc121f1.services.instance.compute.ComputeBackend;
 import jc121f1.model.instance.ComputeStatus;
 import jc121f1.services.instance.events.EventBus;
+import jc121f1.services.instance.events.InstanceHealthEvent;
 import lombok.extern.slf4j.Slf4j;
 
 import javax.inject.Inject;
@@ -57,6 +58,7 @@ public class DockerComputeBackend implements ComputeBackend {
         this.eventBus = eventBus;
         this.computeExecutor = executor;
         this.reconcileContainers().join();
+        this.eventBus.subscribe(DockerContainerEvent.class, this::handleDockerEvent);
     }
 
     @Override
@@ -103,7 +105,7 @@ public class DockerComputeBackend implements ComputeBackend {
         }, computeExecutor);
 
         return startCommand.thenCompose(ignored -> startFuture)
-                .thenApply(event -> null);
+                .thenApply(ignoredEvent -> null);
     }
 
     @Override
@@ -199,5 +201,51 @@ public class DockerComputeBackend implements ComputeBackend {
                 );
             });
         }, computeExecutor);
+    }
+
+    private void handleDockerEvent(DockerContainerEvent event) {
+        if (event.action() == EventAction.HEALTHY
+                || event.action() == EventAction.UNHEALTHY) {
+            publishInstanceHealthEvent(event);
+            return;
+        }
+
+        ComputeStatus status = switch (event.action()) {
+            case START -> ComputeStatus.RUNNING;
+            case DIE -> ComputeStatus.STOPPED;
+            default -> null;
+        };
+
+        if (status == null) {
+            return;
+        }
+
+        instanceToContainer.forEach((instanceId, container) -> {
+            if (container.getId().equals(event.containerId())) {
+                instanceToContainer.computeIfPresent(instanceId,
+                        (ignored, current) -> {
+                            if (!current.getId().equals(event.containerId())) {
+                                return current;
+                            }
+
+                            return DockerContainer.builder()
+                                    .id(current.getId())
+                                    .name(current.getName())
+                                    .instanceId(current.getInstanceId())
+                                    .status(status)
+                                    .build();
+                        });
+            }
+        });
+    }
+
+    private void publishInstanceHealthEvent(DockerContainerEvent event) {
+        instanceToContainer.values().stream()
+                .filter(container -> container.getId().equals(event.containerId()))
+                .findFirst()
+                .ifPresent(container -> eventBus.publish(new InstanceHealthEvent(
+                        container.getInstanceId(),
+                        event.action()
+                )));
     }
 }

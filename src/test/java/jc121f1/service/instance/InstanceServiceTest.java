@@ -786,6 +786,77 @@ public class InstanceServiceTest {
                     Assertions.assertThat(instanceAfter.getState()).isEqualTo(InstanceState.MISSING);
                 }
             }
+
+            @Nested class And_a_missing_instance_receives_a_healthy_event {
+                Instance instanceBefore;
+                Instance instanceAfter;
+                @BeforeEach
+                void setup() {
+                    instanceBefore =  instanceService.create(CreateInstanceRequest.builder()
+                            .name(INSTANCE_NAME)
+                            .cpu(DEFAULT_CPU)
+                            .memory(DEFAULT_MEMORY)
+                            .build());
+
+                    eventBus.publish(new InstanceHealthEvent(instanceBefore.getId(), EventAction.UNHEALTHY));
+
+                    Awaitility.await()
+                            .untilAsserted(() -> {
+                                instanceAfter = instanceService.get(
+                                        GetInstanceRequest.builder()
+                                                .instanceId(instanceBefore.getId())
+                                                .build());
+
+                                Assertions.assertThat(instanceAfter.getState())
+                                        .isEqualTo(InstanceState.MISSING);
+                            });
+
+                    eventBus.publish(new InstanceHealthEvent(instanceBefore.getId(), EventAction.HEALTHY));
+
+                    Awaitility.await()
+                            .untilAsserted(() -> {
+                                instanceAfter = instanceService.get(
+                                        GetInstanceRequest.builder()
+                                                .instanceId(instanceBefore.getId())
+                                                .build());
+                                Assertions.assertThat(instanceAfter.getState())
+                                        .isEqualTo(InstanceState.RUNNING);
+                            });
+                }
+
+                @Test void Instance_should_be_marked_running() {
+                    Assertions.assertThat(instanceAfter.getState()).isEqualTo(InstanceState.RUNNING);
+                }
+            }
+
+            @Nested class And_a_non_missing_instance_receives_a_healthy_event {
+                Instance instanceBefore;
+                Instance instanceAfter;
+                @BeforeEach
+                void setup() {
+                    instanceBefore =  instanceService.create(CreateInstanceRequest.builder()
+                            .name(INSTANCE_NAME)
+                            .cpu(DEFAULT_CPU)
+                            .memory(DEFAULT_MEMORY)
+                            .build());
+
+                    eventBus.publish(new InstanceHealthEvent(instanceBefore.getId(), EventAction.HEALTHY));
+
+                    Awaitility.await()
+                            .untilAsserted(() -> {
+                                instanceAfter = instanceService.get(
+                                        GetInstanceRequest.builder()
+                                                .instanceId(instanceBefore.getId())
+                                                .build());
+                                Assertions.assertThat(instanceAfter.getState())
+                                        .isEqualTo(InstanceState.RUNNING);
+                            });
+                }
+
+                @Test void Instance_should_be_marked_running() {
+                    Assertions.assertThat(instanceAfter.getState()).isEqualTo(InstanceState.RUNNING);
+                }
+            }
         }
     }
 }
