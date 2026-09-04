@@ -7,7 +7,7 @@ plugins {
     checkstyle
     id("io.freefair.lombok") version "9.5.0"
     id("com.gradleup.shadow") version "9.6.1"
-    id("com.github.spotbugs") version "6.4.2"
+    id("com.github.spotbugs") version "6.5.11"
 }
 
 System.setProperty("DEBUG_APP", "true")
