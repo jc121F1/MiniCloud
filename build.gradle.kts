@@ -56,7 +56,7 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation("io.javalin:javalin-testtools:7.2.3")
     testImplementation("org.awaitility:awaitility:4.3.0")
-    mockitoAgent("org.mockito:mockito-core:5.19.0")  { isTransitive = false }
+    mockitoAgent("org.mockito:mockito-core:5.23.0")  { isTransitive = false }
 
     annotationProcessor("com.google.dagger:dagger-compiler:2.60.1")
     testAnnotationProcessor("com.google.dagger:dagger-compiler:2.60.1")
