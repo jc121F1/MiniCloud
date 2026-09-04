@@ -11,7 +11,6 @@ import jc121f1.model.instance.api.request.StopInstanceRequest;
 import jc121f1.model.instance.dao.Instance;
 import jc121f1.services.instance.compute.ComputeBackend;
 import jc121f1.model.instance.ComputeStatus;
-import jc121f1.services.instance.compute.docker.EventAction;
 import jc121f1.services.instance.events.EventBus;
 import jc121f1.services.instance.events.InstanceHealthEvent;
 import jc121f1.services.instance.exceptions.ConflictException;
@@ -229,16 +228,25 @@ public class InstanceServiceImpl implements InstanceService {
     }
 
     private void handleHealthEvent(InstanceHealthEvent event) {
-        if (event.action() != EventAction.UNHEALTHY) {
-            return;
+        switch (event.action()) {
+            case UNHEALTHY:
+                instanceStore.get(event.instanceId())
+                        .thenAccept(optional -> optional.ifPresent(instance -> {
+                            if (!instance.getState().isTerminal()) {
+                                setInstanceState(instance, InstanceState.MISSING);
+                            }
+                        }));
+                break;
+            case HEALTHY:
+                instanceStore.get(event.instanceId())
+                        .thenAccept(optional -> optional.ifPresent(instance -> {
+                            if (instance.getState() == InstanceState.MISSING) {
+                                setInstanceState(instance, InstanceState.RUNNING);
+                            }
+                        }));
+                break;
+            default:
         }
-
-        instanceStore.get(event.instanceId())
-                .thenAccept(optional -> optional.ifPresent(instance -> {
-                    if (!instance.getState().isTerminal()) {
-                        setInstanceState(instance, InstanceState.MISSING);
-                    }
-                }));
     }
 
     private Instance replaceInstance(Instance previous, Instance newInstance) {

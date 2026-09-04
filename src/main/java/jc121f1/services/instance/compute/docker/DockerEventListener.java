@@ -6,6 +6,7 @@ import com.github.dockerjava.api.model.Event;
 import com.github.dockerjava.api.model.EventActor;
 import com.google.common.base.Preconditions;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import jc121f1.services.instance.events.EventBus;
 
 import javax.inject.Inject;
 import java.io.IOException;
@@ -24,11 +25,13 @@ public class DockerEventListener implements AutoCloseable {
             justification = "dockerClient is an injected service dependency and is intentionally shared."
     )
     private final DockerClient dockerClient;
+    private final EventBus eventBus;
     private ResultCallback.Adapter<Event> callback;
 
     @Inject
-    public DockerEventListener(DockerClient dockerClient) {
+    public DockerEventListener(DockerClient dockerClient, EventBus eventBus) {
         this.dockerClient = dockerClient;
+        this.eventBus = eventBus;
         start();
     }
 
@@ -47,6 +50,11 @@ public class DockerEventListener implements AutoCloseable {
                 EventActor actor = Preconditions.checkNotNull(event.getActor(),
                         "Docker event actor must not be null");
                 EventKey key = new EventKey(actor.getId(), action.get());
+
+                eventBus.publish(new DockerContainerEvent(
+                        actor.getId(),
+                        action.get()
+                ));
 
                 CompletableFuture<Event> future = pendingEvents.remove(key);
 

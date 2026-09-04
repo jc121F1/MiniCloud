@@ -10,12 +10,10 @@ import java.util.function.Consumer;
 
 public final class SimpleEventBus implements EventBus {
 
-    private final Executor executor;
     private final Map<Class<?>, List<Consumer<?>>> subscribers = new ConcurrentHashMap<>();
 
     @Inject
     public SimpleEventBus(Executor executor) {
-        this.executor = executor;
     }
 
     @Override
@@ -41,7 +39,7 @@ public final class SimpleEventBus implements EventBus {
         List<Consumer<?>> consumers = subscribers.get(eventClass);
         if (consumers != null) {
             for (Consumer<?> consumer : consumers) {
-                executor.execute(() -> dispatch(consumer, event));
+                dispatch(consumer, event);
             }
         }
     }

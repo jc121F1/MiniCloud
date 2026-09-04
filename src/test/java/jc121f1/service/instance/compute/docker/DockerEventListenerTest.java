@@ -7,7 +7,9 @@ import com.github.dockerjava.api.model.Event;
 import com.github.dockerjava.api.model.EventActor;
 import jc121f1.annotations.MiniCloudTest;
 import jc121f1.services.instance.compute.docker.DockerEventListener;
+import jc121f1.services.instance.compute.docker.DockerContainerEvent;
 import jc121f1.services.instance.compute.docker.EventAction;
+import jc121f1.services.instance.events.EventBus;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -31,6 +33,9 @@ public class DockerEventListenerTest {
     @Mock
     private EventsCmd eventsCmd;
 
+    @Mock
+    private EventBus eventBus;
+
     private DockerEventListener eventListener;
     private ResultCallback.Adapter<Event> callback;
 
@@ -38,7 +43,7 @@ public class DockerEventListenerTest {
     void setup() {
         Mockito.when(dockerClient.eventsCmd()).thenReturn(eventsCmd);
 
-        eventListener = new DockerEventListener(dockerClient);
+        eventListener = new DockerEventListener(dockerClient, eventBus);
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<ResultCallback.Adapter<Event>> captor =
@@ -63,6 +68,28 @@ public class DockerEventListenerTest {
 
             Assertions.assertThat(future)
                     .isCompletedWithValue(event);
+        }
+
+        @Test
+        void It_should_publish_a_container_event_before_completing_a_waiter() {
+            CompletableFuture<Event> future =
+                    eventListener.waitFor(CONTAINER_ID, EventAction.START);
+
+            Mockito.doAnswer(invocation -> {
+                Assertions.assertThat(future).isNotDone();
+                return null;
+            }).when(eventBus).publish(Mockito.any());
+
+            callback.onNext(event(CONTAINER_ID, "start"));
+
+            ArgumentCaptor<Object> eventCaptor = ArgumentCaptor.forClass(Object.class);
+            Mockito.verify(eventBus).publish(eventCaptor.capture());
+            Assertions.assertThat(eventCaptor.getValue())
+                    .isEqualTo(new DockerContainerEvent(
+                            CONTAINER_ID,
+                            EventAction.START
+                    ));
+            Assertions.assertThat(future).isCompleted();
         }
 
         @Test

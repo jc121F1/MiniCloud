@@ -14,13 +14,16 @@ import jc121f1.annotations.MiniCloudTest;
 import jc121f1.model.instance.ComputeStatus;
 import jc121f1.model.instance.dao.Instance;
 import jc121f1.services.instance.compute.docker.DockerComputeBackend;
+import jc121f1.services.instance.compute.docker.DockerContainerEvent;
 import jc121f1.services.instance.compute.docker.DockerEventListener;
 import jc121f1.services.instance.compute.docker.EventAction;
 import jc121f1.services.instance.events.EventBus;
+import jc121f1.services.instance.events.InstanceHealthEvent;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 
@@ -29,6 +32,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.function.Consumer;
 
 //CHECKSTYLE:OFF
 import static jc121f1.services.instance.compute.docker.DockerComputeBackend.INSTANCE_LABEL_KEY;
@@ -575,6 +579,56 @@ public class DockerComputeBackendTest {
         }
     }
 
+    @Nested
+    class When_receiving_a_docker_lifecycle_event {
+
+        @BeforeEach
+        void setup() {
+            computeBackend = newBackend();
+            createContainer();
+        }
+
+        @Test
+        void It_should_update_status_for_start_and_die_events() {
+            Consumer<DockerContainerEvent> consumer = dockerEventConsumer();
+
+            consumer.accept(new DockerContainerEvent(CONTAINER_ID, EventAction.DIE));
+
+            Assertions.assertThat(computeBackend.describeStatuses(List.of(instance)))
+                    .containsEntry(INSTANCE_ID, ComputeStatus.STOPPED);
+
+            consumer.accept(new DockerContainerEvent(CONTAINER_ID, EventAction.START));
+
+            Assertions.assertThat(computeBackend.describeStatuses(List.of(instance)))
+                    .containsEntry(INSTANCE_ID, ComputeStatus.RUNNING);
+        }
+
+        @Test
+        void It_should_publish_an_instance_health_event() {
+            dockerEventConsumer().accept(new DockerContainerEvent(
+                    CONTAINER_ID,
+                    EventAction.UNHEALTHY
+            ));
+
+            Mockito.verify(eventBus).publish(new InstanceHealthEvent(
+                    INSTANCE_ID,
+                    EventAction.UNHEALTHY
+            ));
+            Assertions.assertThat(computeBackend.describeStatuses(List.of(instance)))
+                    .containsEntry(INSTANCE_ID, ComputeStatus.RUNNING);
+        }
+
+        @Test
+        void It_should_not_publish_health_events_for_unknown_containers() {
+            dockerEventConsumer().accept(new DockerContainerEvent(
+                    "unknown-container",
+                    EventAction.HEALTHY
+            ));
+
+            Mockito.verify(eventBus, Mockito.never()).publish(Mockito.any());
+        }
+    }
+
     private DockerComputeBackend newBackend() {
         return new DockerComputeBackend(
                 dockerClient,
@@ -582,6 +636,19 @@ public class DockerComputeBackendTest {
                 eventBus,
                 executor
         );
+    }
+
+    @SuppressWarnings("unchecked")
+    private Consumer<DockerContainerEvent> dockerEventConsumer() {
+        ArgumentCaptor<Consumer<DockerContainerEvent>> captor =
+                ArgumentCaptor.forClass(Consumer.class);
+
+        Mockito.verify(eventBus, Mockito.atLeastOnce()).subscribe(
+                Mockito.eq(DockerContainerEvent.class),
+                captor.capture()
+        );
+
+        return captor.getValue();
     }
 
     private Container createDockerContainer(
