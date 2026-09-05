@@ -32,7 +32,7 @@ class DynamoDbInstanceStoreTest {
     private static final String INSTANCE_ID = "instance-123";
     private static final String INSTANCE_NAME = "test-instance";
     private static final String NAME_LOCK_ID =
-            "__name_lock__" + INSTANCE_NAME;
+            "__unique_lock__#name#";
 
     @Mock
     private DynamoDbAsyncClient dynamoDbAsyncClient;
@@ -275,7 +275,7 @@ class DynamoDbInstanceStoreTest {
             );
 
             Assertions.assertEquals(
-                    NAME_LOCK_ID,
+                    NAME_LOCK_ID + INSTANCE_NAME,
                     nameLockWrite.put()
                             .item()
                             .get("id")
@@ -283,13 +283,13 @@ class DynamoDbInstanceStoreTest {
             );
 
             Assertions.assertEquals(
-                    "attribute_not_exists(id)",
+                    "attribute_not_exists(#id)",
                     instanceWrite.put()
                             .conditionExpression()
             );
 
             Assertions.assertEquals(
-                    "attribute_not_exists(id)",
+                    "attribute_not_exists(#id)",
                     nameLockWrite.put()
                             .conditionExpression()
             );
@@ -390,17 +390,9 @@ class DynamoDbInstanceStoreTest {
             );
 
             Assertions.assertEquals(
-                    "attribute_exists(id) AND #name = :previousName",
+                    "attribute_exists(#id)",
                     instanceWrite.put()
                             .conditionExpression()
-            );
-
-            Assertions.assertEquals(
-                    INSTANCE_NAME,
-                    instanceWrite.put()
-                            .expressionAttributeValues()
-                            .get(":previousName")
-                            .s()
             );
 
             Mockito.verifyNoInteractions(table);
@@ -462,7 +454,7 @@ class DynamoDbInstanceStoreTest {
             Assertions.assertNotNull(instanceWrite.put());
 
             Assertions.assertEquals(
-                    NAME_LOCK_ID,
+                    NAME_LOCK_ID + INSTANCE_NAME,
                     deleteLock.delete()
                             .key()
                             .get("id")
@@ -470,7 +462,7 @@ class DynamoDbInstanceStoreTest {
             );
 
             Assertions.assertEquals(
-                    "__name_lock__" + newName,
+                    NAME_LOCK_ID + newName,
                     createLock.put()
                             .item()
                             .get("id")
@@ -478,7 +470,7 @@ class DynamoDbInstanceStoreTest {
             );
 
             Assertions.assertEquals(
-                    "attribute_not_exists(id)",
+                    "attribute_not_exists(#id)",
                     createLock.put()
                             .conditionExpression()
             );
@@ -492,17 +484,9 @@ class DynamoDbInstanceStoreTest {
             );
 
             Assertions.assertEquals(
-                    "attribute_exists(id) AND #name = :previousName",
+                    "attribute_exists(#id)",
                     instanceWrite.put()
                             .conditionExpression()
-            );
-
-            Assertions.assertEquals(
-                    INSTANCE_NAME,
-                    instanceWrite.put()
-                            .expressionAttributeValues()
-                            .get(":previousName")
-                            .s()
             );
 
             Mockito.verifyNoInteractions(table);
@@ -584,7 +568,7 @@ class DynamoDbInstanceStoreTest {
             );
 
             Assertions.assertEquals(
-                    NAME_LOCK_ID,
+                    NAME_LOCK_ID + INSTANCE_NAME,
                     nameLockDelete.delete()
                             .key()
                             .get("id")
