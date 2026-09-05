@@ -86,8 +86,8 @@ public class DockerComputeBackendTest {
         Mockito.when(listContainersCmd.withShowAll(true)).thenReturn(listContainersCmd);
         Mockito.when(listContainersCmd.exec()).thenReturn(List.of());
 
-        Mockito.lenient().when(instance.getId()).thenReturn(INSTANCE_ID);
-        Mockito.lenient().when(instance.getCpu()).thenReturn(CPU);
+        Mockito.lenient().when(instance.id()).thenReturn(INSTANCE_ID);
+        Mockito.lenient().when(instance.cpu()).thenReturn(CPU);
         Mockito.lenient().when(instance.memoryInBytes()).thenReturn((long) MEMORY);
     }
 
@@ -286,7 +286,7 @@ public class DockerComputeBackendTest {
             Mockito.when(removeContainerCmd.withForce(true))
                     .thenReturn(removeContainerCmd);
 
-            Mockito.when(instance.getId()).thenReturn(INSTANCE_ID);
+            Mockito.when(instance.id()).thenReturn(INSTANCE_ID);
         }
 
         @Test
@@ -321,7 +321,7 @@ public class DockerComputeBackendTest {
         @BeforeEach void setup() {
             computeBackend = newBackend();
 
-            Mockito.when(instance.getId()).thenReturn(INSTANCE_ID);
+            Mockito.when(instance.id()).thenReturn(INSTANCE_ID);
         }
 
         @Test
@@ -492,7 +492,7 @@ public class DockerComputeBackendTest {
             String secondInstanceId = "i-456";
 
             Instance secondInstance = Mockito.mock(Instance.class);
-            Mockito.when(secondInstance.getId())
+            Mockito.when(secondInstance.id())
                     .thenReturn(secondInstanceId);
 
             Container runningContainer = createDockerContainer(

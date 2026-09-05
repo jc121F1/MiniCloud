@@ -71,11 +71,11 @@ public class InstanceServiceImpl implements InstanceService {
             throw new ValidationException(
                     "GetInstanceRequest must contain one of [\"name\" or \"instanceId\"]");
         } else if (request.hasInstanceId()) {
-            return instanceStore.get(request.getInstanceId()).join()
-                    .orElseThrow(() -> new ResourceNotFoundException("Instance not found " + request.getInstanceId()));
+            return instanceStore.get(request.instanceId()).join()
+                    .orElseThrow(() -> new ResourceNotFoundException("Instance not found " + request.instanceId()));
         } else {
-            return instanceStore.getByName(request.getName()).join()
-                    .orElseThrow(() -> new ResourceNotFoundException("Instance not found " + request.getName()));
+            return instanceStore.getByName(request.name()).join()
+                    .orElseThrow(() -> new ResourceNotFoundException("Instance not found " + request.name()));
         }
     }
 
@@ -99,9 +99,9 @@ public class InstanceServiceImpl implements InstanceService {
 
         instanceId = "i-" + UUID.randomUUID();
         createdInstance = Instance.builder()
-                .cpu(request.getCpu())
-                .name(request.getName())
-                .memory(request.getMemory())
+                .cpu(request.cpu())
+                .name(request.name())
+                .memory(request.memory())
                 .id(instanceId)
                 .state(InstanceState.STARTING)
                 .createdAt(clock.instant())
@@ -134,13 +134,13 @@ public class InstanceServiceImpl implements InstanceService {
         Instance remove;
         String identifier;
 
-        if (request.getInstanceId() == null && request.getName() == null) {
+        if (request.instanceId() == null && request.name() == null) {
             throw new ValidationException(
                     "DeleteInstanceRequest must contain one of [\"name\" or \"instanceId\"]");
-        } else if (request.getInstanceId() != null) {
-            identifier = request.getInstanceId();
+        } else if (request.instanceId() != null) {
+            identifier = request.instanceId();
         } else {
-            identifier = request.getName();
+            identifier = request.name();
         }
         remove = get(identifier);
 
@@ -156,22 +156,22 @@ public class InstanceServiceImpl implements InstanceService {
         Instance stop;
         String identifier;
 
-        if (request.getInstanceId() == null && request.getName() == null) {
+        if (request.instanceId() == null && request.name() == null) {
             throw new ValidationException(
                     "StopInstanceRequest must contain one of [\"name\" or \"instanceId\"]");
-        } else if (request.getInstanceId() != null) {
-            identifier = request.getInstanceId();
+        } else if (request.instanceId() != null) {
+            identifier = request.instanceId();
         } else {
-            identifier = request.getName();
+            identifier = request.name();
         }
         stop = get(identifier);
 
-        if (stop.getState().isStoppable()) {
+        if (stop.state().isStoppable()) {
             stop = setInstanceState(stop, InstanceState.STOPPING);
         } else {
             throw new ConflictException(
                     "Instance {" + identifier + "} is not in a startable state. " +
-                            "Current state is {" + stop.getState() + "}");
+                            "Current state is {" + stop.state() + "}");
         }
         stopInstance(stop);
 
@@ -183,21 +183,21 @@ public class InstanceServiceImpl implements InstanceService {
         Instance start;
         String identifier;
 
-        if (request.getInstanceId() == null && request.getName() == null) {
+        if (request.instanceId() == null && request.name() == null) {
             throw new ValidationException(
                     "StopInstanceRequest must contain one of [\"name\" or \"instanceId\"]");
-        } else if (request.getInstanceId() != null) {
-            identifier = request.getInstanceId();
+        } else if (request.instanceId() != null) {
+            identifier = request.instanceId();
         } else {
-            identifier = request.getName();
+            identifier = request.name();
         }
         start = get(identifier);
-        if (start.getState().isStartable()) {
+        if (start.state().isStartable()) {
             start = setInstanceState(start, InstanceState.STARTING);
         } else {
             throw new ConflictException(
                     "Instance {" + identifier + "} is not in a startable state. " +
-                            "Current state is {" + start.getState() + "}");
+                            "Current state is {" + start.state() + "}");
         }
         startInstance(start);
         return start.copyOf();
@@ -232,7 +232,7 @@ public class InstanceServiceImpl implements InstanceService {
             case UNHEALTHY:
                 instanceStore.get(event.instanceId())
                         .thenAccept(optional -> optional.ifPresent(instance -> {
-                            if (!instance.getState().isTerminal()) {
+                            if (!instance.state().isTerminal()) {
                                 setInstanceState(instance, InstanceState.MISSING);
                             }
                         }));
@@ -240,7 +240,7 @@ public class InstanceServiceImpl implements InstanceService {
             case HEALTHY:
                 instanceStore.get(event.instanceId())
                         .thenAccept(optional -> optional.ifPresent(instance -> {
-                            if (instance.getState() == InstanceState.MISSING) {
+                            if (instance.state() == InstanceState.MISSING) {
                                 setInstanceState(instance, InstanceState.RUNNING);
                             }
                         }));
@@ -279,10 +279,10 @@ public class InstanceServiceImpl implements InstanceService {
                                         .map(instance -> {
                                             ComputeStatus status =
                                                     statuses.getOrDefault(
-                                                            instance.getId(),
+                                                            instance.id(),
                                                             ComputeStatus.MISSING);
 
-                                            return switch (instance.getState()) {
+                                            return switch (instance.state()) {
                                                 case RUNNING ->
                                                         reconcileRunning(instance, status);
                                                 case STOPPED ->
@@ -362,7 +362,7 @@ public class InstanceServiceImpl implements InstanceService {
     }
 
     private Void markInstanceMissing(Instance instance, Throwable error) {
-        log.warn("Failed to reconcile instance {}", instance.getId(), error);
+        log.warn("Failed to reconcile instance {}", instance.id(), error);
         setInstanceState(instance, InstanceState.MISSING);
         return null;
     }

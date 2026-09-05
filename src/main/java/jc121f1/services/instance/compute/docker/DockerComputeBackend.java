@@ -63,25 +63,25 @@ public class DockerComputeBackend implements ComputeBackend {
 
     @Override
     public CompletableFuture<Void> create(Instance instance) {
-        String containerName = "MiniCloud-" + instance.getId();
+        String containerName = "MiniCloud-" + instance.id();
         return CompletableFuture.runAsync(() -> {
             CreateContainerCmd createCommand = dockerClient
                     .createContainerCmd("jc121f1/alpine")
                     .withHostConfig(
                             HostConfig.newHostConfig()
-                                    .withCpuCount((long) instance.getCpu())
+                                    .withCpuCount((long) instance.cpu())
                                     .withMemory(instance.memoryInBytes())
                     )
                     .withName(containerName)
                     .withLabels(Map.of(
-                            INSTANCE_LABEL_KEY, instance.getId()));
+                            INSTANCE_LABEL_KEY, instance.id()));
 
             CreateContainerResponse response = createCommand.exec();
 
             instanceToContainer.put(
-                    instance.getId(),
+                    instance.id(),
                     DockerContainer.builder()
-                            .instanceId(instance.getId())
+                            .instanceId(instance.id())
                             .id(response.getId())
                             .name(containerName)
                             .status(ComputeStatus.RUNNING).build()
@@ -129,20 +129,20 @@ public class DockerComputeBackend implements ComputeBackend {
         return CompletableFuture.runAsync(() -> {
             dockerClient.removeContainerCmd(containerId).withForce(true).exec();
 
-            instanceToContainer.remove(instance.getId());
+            instanceToContainer.remove(instance.id());
         }, computeExecutor);
     }
 
     @Override
     public Map<String, ComputeStatus> describeStatuses(List<Instance> instances) {
         return instances.stream()
-                .collect(Collectors.toMap(Instance::getId,
+                .collect(Collectors.toMap(Instance::id,
                         instance -> {
-                    DockerContainer container =  instanceToContainer.get(instance.getId());
+                    DockerContainer container =  instanceToContainer.get(instance.id());
                     if  (container == null) {
                         return ComputeStatus.MISSING;
                     }
-                    return instanceToContainer.get(instance.getId()).getStatus();
+                    return instanceToContainer.get(instance.id()).getStatus();
                 }));
     }
 
@@ -165,12 +165,12 @@ public class DockerComputeBackend implements ComputeBackend {
     }
 
     private String getContainerId(Instance instance) {
-        Optional<DockerContainer> container = Optional.ofNullable(instanceToContainer.get(instance.getId()));
+        Optional<DockerContainer> container = Optional.ofNullable(instanceToContainer.get(instance.id()));
         String containerId = container.map(DockerContainer::getId).orElse(null);
 
         if (containerId == null) {
             throw new IllegalStateException(
-                    "No Docker container exists for instance " + instance.getId()
+                    "No Docker container exists for instance " + instance.id()
             );
         }
 

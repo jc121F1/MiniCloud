@@ -36,7 +36,12 @@ checkstyle {
 
 val mockitoAgent = configurations.create("mockitoAgent")
 dependencies {
+    val openapi = "7.2.3"
+
     implementation("io.javalin:javalin:7.2.3")
+    implementation("io.javalin.community.openapi:javalin-openapi-plugin:${openapi}")
+    implementation("io.javalin.community.openapi:javalin-swagger-plugin:${openapi}")
+    implementation("io.javalin.community.openapi:javalin-redoc-plugin:${openapi}")
     implementation("com.google.dagger:dagger:2.60.1")
     implementation("org.slf4j:slf4j-api:2.0.18")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.22.2")
@@ -59,6 +64,7 @@ dependencies {
     mockitoAgent("org.mockito:mockito-core:5.23.0")  { isTransitive = false }
 
     annotationProcessor("com.google.dagger:dagger-compiler:2.60.1")
+    annotationProcessor("io.javalin.community.openapi:openapi-annotation-processor:$openapi")
     testAnnotationProcessor("com.google.dagger:dagger-compiler:2.60.1")
 }
 tasks {

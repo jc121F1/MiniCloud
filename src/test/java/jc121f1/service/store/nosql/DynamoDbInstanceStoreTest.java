@@ -210,10 +210,10 @@ class DynamoDbInstanceStoreTest {
 
         @BeforeEach
         void setUpInstance() {
-            Mockito.when(instance.getId())
+            Mockito.when(instance.id())
                     .thenReturn(INSTANCE_ID);
 
-            Mockito.when(instance.getName())
+            Mockito.when(instance.name())
                     .thenReturn(INSTANCE_NAME);
         }
 

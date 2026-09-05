@@ -84,7 +84,7 @@ class InstanceServiceEndToEndTest {
                     Instance.class
             );
 
-            instanceId = createdInstance.getId();
+            instanceId = createdInstance.id();
         }
 
         @Order(11)
@@ -99,14 +99,19 @@ class InstanceServiceEndToEndTest {
             Assertions.assertThat(instanceId)
                     .startsWith("i-");
 
-            Assertions.assertThat(createdInstance.getName())
+            Assertions.assertThat(createdInstance.name())
                     .isEqualTo("e2e-instance");
 
-            Assertions.assertThat(createdInstance.getCpu())
+            Assertions.assertThat(createdInstance.cpu())
                     .isEqualTo(2);
 
-            Assertions.assertThat(createdInstance.getMemory())
+            Assertions.assertThat(createdInstance.memory())
                     .isEqualTo(8);
+        }
+
+        @Order(13)
+        @Test void Instance_should_become_running() {
+            assertInstanceStateEventually(InstanceState.RUNNING);
         }
     }
 
@@ -155,7 +160,7 @@ class InstanceServiceEndToEndTest {
 
             Assertions.assertThat(instances)
                     .anyMatch(instance ->
-                            instance.getId().equals(instanceId)
+                            instance.id().equals(instanceId)
                     );
         }
 
@@ -191,7 +196,7 @@ class InstanceServiceEndToEndTest {
                     Instance.class
             );
 
-            Assertions.assertThat(described).isEqualTo(createdInstance);
+            assertInstanceEqualExceptState(described, createdInstance);
         }
 
         @Order(33)
@@ -208,7 +213,7 @@ class InstanceServiceEndToEndTest {
 
             Assertions.assertThat(response.code()).isEqualTo(200);
             Instance described = OBJECT_MAPPER.readValue(response.body().string(), Instance.class);
-            Assertions.assertThat(described.getId()).isEqualTo(instanceId);
+            Assertions.assertThat(described.id()).isEqualTo(instanceId);
         }
 
         @Order(34)
@@ -271,7 +276,7 @@ class InstanceServiceEndToEndTest {
 
         @Order(52)
         @Test void It_should_return_stopping_instance() {
-            Assertions.assertThat(stoppingInstance.getState()).isEqualTo(InstanceState.STOPPING);
+            Assertions.assertThat(stoppingInstance.state()).isEqualTo(InstanceState.STOPPING);
         }
 
         @Order(53)
@@ -311,7 +316,7 @@ class InstanceServiceEndToEndTest {
 
         @Order(62)
         @Test void It_should_return_starting_instance() {
-            Assertions.assertThat(startingInstance.getState()).isEqualTo(InstanceState.STARTING);
+            Assertions.assertThat(startingInstance.state()).isEqualTo(InstanceState.STARTING);
         }
 
         @Order(63)
@@ -410,7 +415,7 @@ class InstanceServiceEndToEndTest {
                             .as("describe response body: %s", body)
                             .isEqualTo(200);
                     Instance described = OBJECT_MAPPER.readValue(body, Instance.class);
-                    Assertions.assertThat(described.getState())
+                    Assertions.assertThat(described.state())
                             .as("describe response body: %s", body)
                             .isEqualTo(expectedState);
                 });
@@ -433,7 +438,14 @@ class InstanceServiceEndToEndTest {
                             .readValue(body);
                     Assertions.assertThat(remaining)
                             .as("list response body: %s", body)
-                            .noneMatch(instance -> instance.getId().equals(instanceId));
+                            .noneMatch(instance -> instance.id().equals(instanceId));
                 });
+    }
+
+    private void assertInstanceEqualExceptState(Instance instance1, Instance instance2) {
+        Assertions.assertThat(instance1.cpu()).isEqualTo(instance2.cpu());
+        Assertions.assertThat(instance1.id()).isEqualTo(instance2.id());
+        Assertions.assertThat(instance1.name()).isEqualTo(instance2.name());
+        Assertions.assertThat(instance1.memory()).isEqualTo(instance2.memory());
     }
 }
