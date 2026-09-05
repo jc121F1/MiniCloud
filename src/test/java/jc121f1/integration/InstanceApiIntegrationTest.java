@@ -61,7 +61,7 @@ class InstanceApiIntegrationTest {
                 );
 
         Mockito.when(computeBackend.describeStatuses(Mockito.any()))
-                .thenReturn(Map.of(instance.getId(), ComputeStatus.RUNNING));
+                .thenReturn(Map.of(instance.id(), ComputeStatus.RUNNING));
         app = new InstanceWebService(component).create();
     }
 
@@ -110,16 +110,16 @@ class InstanceApiIntegrationTest {
                                 Instance.class
                         );
 
-                Assertions.assertThat(createdInstance.getId())
+                Assertions.assertThat(createdInstance.id())
                         .startsWith("i-");
 
-                Assertions.assertThat(createdInstance.getName())
+                Assertions.assertThat(createdInstance.name())
                         .isEqualTo("test-instance");
 
-                Assertions.assertThat(createdInstance.getCpu())
+                Assertions.assertThat(createdInstance.cpu())
                         .isEqualTo(2);
 
-                Assertions.assertThat(createdInstance.getMemory())
+                Assertions.assertThat(createdInstance.memory())
                         .isEqualTo(1024);
 
                 Mockito.verify(computeBackend)
@@ -153,13 +153,13 @@ class InstanceApiIntegrationTest {
                 Assertions.assertThat(instances)
                         .hasSize(1);
 
-                Assertions.assertThat(instances.getFirst().getName())
+                Assertions.assertThat(instances.getFirst().name())
                         .isEqualTo("test-instance");
 
-                Assertions.assertThat(instances.getFirst().getCpu())
+                Assertions.assertThat(instances.getFirst().cpu())
                         .isEqualTo(2);
 
-                Assertions.assertThat(instances.getFirst().getMemory())
+                Assertions.assertThat(instances.getFirst().memory())
                         .isEqualTo(1024);
             });
         }

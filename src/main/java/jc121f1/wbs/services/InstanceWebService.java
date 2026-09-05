@@ -1,6 +1,9 @@
 package jc121f1.wbs.services;
 
 import io.javalin.Javalin;
+import io.javalin.openapi.plugin.OpenApiPlugin;
+import io.javalin.openapi.plugin.redoc.ReDocPlugin;
+import io.javalin.openapi.plugin.swagger.SwaggerPlugin;
 import jc121f1.dagger.instance.InstanceWebServiceComponent;
 import jc121f1.services.instance.compute.ComputeBackend;
 import jc121f1.wbs.WebService;
@@ -49,6 +52,13 @@ public class InstanceWebService extends WebService {
         Boolean disableJmDNS = component.disableJmDNS();
         MiniCloudExceptionMapper exceptionMapper = component.exceptionMapper();
         return Javalin.create(config -> {
+            config.registerPlugin(new OpenApiPlugin(pluginConfig -> {
+                pluginConfig.withDefinitionConfiguration((version, definition) -> {
+                    definition.info(info -> info.title("OpenAPI"));
+                });
+            }));
+            config.registerPlugin(new SwaggerPlugin());
+            config.registerPlugin(new ReDocPlugin());
             config.routes.exception(Exception.class, exceptionMapper::mapException);
             config.events.serverStarted(() -> {
                 if (!disableJmDNS) {

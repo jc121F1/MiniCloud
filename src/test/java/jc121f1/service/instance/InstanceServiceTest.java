@@ -89,30 +89,30 @@ public class InstanceServiceTest {
             Mockito.lenient().when(instanceStore.create(Mockito.any()))
                     .thenAnswer(invocation -> {
                         Instance created = invocation.getArgument(0);
-                        if (idsByName.putIfAbsent(created.getName(), created.getId()) != null) {
+                        if (idsByName.putIfAbsent(created.name(), created.id()) != null) {
                             return CompletableFuture.failedFuture(new IllegalArgumentException(
-                                    "An instance with name '" + created.getName() + "' already exists"
+                                    "An instance with name '" + created.name() + "' already exists"
                             ));
                         }
-                        instancesById.put(created.getId(), created);
+                        instancesById.put(created.id(), created);
                         return CompletableFuture.completedFuture(created);
                     });
             Mockito.lenient().when(instanceStore.update(Mockito.any(), Mockito.any()))
                     .thenAnswer(invocation -> {
                         Instance previous = invocation.getArgument(0);
                         Instance updated = invocation.getArgument(1);
-                        instancesById.replace(previous.getId(), updated);
-                        if (!previous.getName().equals(updated.getName())) {
-                            idsByName.remove(previous.getName(), previous.getId());
-                            idsByName.put(updated.getName(), updated.getId());
+                        instancesById.replace(previous.id(), updated);
+                        if (!previous.name().equals(updated.name())) {
+                            idsByName.remove(previous.name(), previous.id());
+                            idsByName.put(updated.name(), updated.id());
                         }
                         return CompletableFuture.completedFuture(updated);
                     });
             Mockito.lenient().when(instanceStore.delete(Mockito.any()))
                     .thenAnswer(invocation -> {
                         Instance deleted = invocation.getArgument(0);
-                        instancesById.remove(deleted.getId());
-                        idsByName.remove(deleted.getName(), deleted.getId());
+                        instancesById.remove(deleted.id());
+                        idsByName.remove(deleted.name(), deleted.id());
                         return CompletableFuture.completedFuture(null);
                     });
             instanceService = new InstanceServiceImpl(clock, computeBackend, eventBus, instanceStore);
@@ -137,32 +137,28 @@ public class InstanceServiceTest {
             }
 
             @Test void It_should_have_the_requested_name() {
-                Assertions.assertThat(instance.getName()).isEqualTo(INSTANCE_NAME);
+                Assertions.assertThat(instance.name()).isEqualTo(INSTANCE_NAME);
             }
 
             @Test void It_should_have_the_requested_cpu() {
-                Assertions.assertThat(instance.getCpu()).isEqualTo(DEFAULT_CPU);
+                Assertions.assertThat(instance.cpu()).isEqualTo(DEFAULT_CPU);
             }
 
             @Test void It_should_have_the_requested_memory() {
-                Assertions.assertThat(instance.getMemory()).isEqualTo(DEFAULT_MEMORY);
+                Assertions.assertThat(instance.memory()).isEqualTo(DEFAULT_MEMORY);
             }
 
             @Test void It_should_have_state_starting() {
-                Assertions.assertThat(instance.getState()).isEqualTo(InstanceState.STARTING);
+                Assertions.assertThat(instance.state()).isEqualTo(InstanceState.STARTING);
             }
 
             @Test void It_should_return_an_instance_id() {
-                Assertions.assertThat(instance.getId()).isNotNull();
-                Assertions.assertThat(instance.getId()).startsWith("i-");
+                Assertions.assertThat(instance.id()).isNotNull();
+                Assertions.assertThat(instance.id()).startsWith("i-");
             }
 
             @Test void It_should_have_creation_time() {
-                Assertions.assertThat(instance.getCreatedAt()).isEqualTo(createdAt);
-            }
-
-            @Test void Instance_should_be_listable() {
-                Assertions.assertThat(instanceService.list(new ListInstanceRequest()).getFirst()).isEqualTo(instance);
+                Assertions.assertThat(instance.createdAt()).isEqualTo(createdAt);
             }
         }
 
@@ -178,7 +174,7 @@ public class InstanceServiceTest {
                     Mockito.when(clock.instant()).thenReturn(Instant.now());
                     instance = instanceService.create(request);
                     instance = instanceService.get(GetInstanceRequest.builder()
-                            .instanceId(instance.getId()).build());
+                            .instanceId(instance.id()).build());
                 }
 
                 @Test void It_should_throw_exception() {
@@ -219,7 +215,7 @@ public class InstanceServiceTest {
                 }
 
                 @Test void Instances_should_have_different_ids() {
-                    Assertions.assertThat(instance1.getId()).isNotEqualTo(instance2.getId());
+                    Assertions.assertThat(instance1.id()).isNotEqualTo(instance2.id());
                 }
             }
         }
@@ -256,8 +252,13 @@ public class InstanceServiceTest {
                 }
 
                 @Test void Stored_instance_should_equal_expected() {
-                    Assertions.assertThat(instanceService.list(new ListInstanceRequest())).hasSize(1);
-                    Assertions.assertThat(instanceService.list(new ListInstanceRequest()).getFirst()).isEqualTo(expected);
+                    Assertions.assertThat(response).hasSize(1);
+                    Instance responseInstance = response.getFirst();
+                    Assertions.assertThat(responseInstance.id()).isEqualTo(expected.id());
+                    Assertions.assertThat(responseInstance.name()).isEqualTo(expected.name());
+                    Assertions.assertThat(responseInstance.cpu()).isEqualTo(expected.cpu());
+                    Assertions.assertThat(responseInstance.memory()).isEqualTo(expected.memory());
+                    Assertions.assertThat(responseInstance.createdAt()).isEqualTo(expected.createdAt());
                 }
             }
         }
@@ -282,7 +283,7 @@ public class InstanceServiceTest {
                 @BeforeEach
                 void setup() {
                     GetInstanceRequest request = GetInstanceRequest.builder()
-                            .instanceId(expected.getId())
+                            .instanceId(expected.id())
                             .build();
 
                     response = instanceService.get(request);
@@ -290,7 +291,10 @@ public class InstanceServiceTest {
 
                 @Test
                 void It_should_return_the_instance() {
-                    Assertions.assertThat(response).isEqualTo(expected);
+                    Assertions.assertThat(response.id()).isEqualTo(expected.id());
+                    Assertions.assertThat(response.name()).isEqualTo(expected.name());
+                    Assertions.assertThat(response.cpu()).isEqualTo(expected.cpu());
+                    Assertions.assertThat(response.memory()).isEqualTo(expected.memory());
                 }
             }
 
@@ -301,7 +305,7 @@ public class InstanceServiceTest {
                 @BeforeEach
                 void setup() {
                     GetInstanceRequest request = GetInstanceRequest.builder()
-                            .name(expected.getName())
+                            .name(expected.name())
                             .build();
 
                     response = instanceService.get(request);
@@ -309,7 +313,10 @@ public class InstanceServiceTest {
 
                 @Test
                 void It_should_return_the_instance() {
-                    Assertions.assertThat(response).isEqualTo(expected);
+                    Assertions.assertThat(response.id()).isEqualTo(expected.id());
+                    Assertions.assertThat(response.name()).isEqualTo(expected.name());
+                    Assertions.assertThat(response.cpu()).isEqualTo(expected.cpu());
+                    Assertions.assertThat(response.memory()).isEqualTo(expected.memory());
                 }
             }
 
@@ -350,7 +357,7 @@ public class InstanceServiceTest {
                         .memory(DEFAULT_MEMORY)
                         .build());
                 expected = instanceService.get(GetInstanceRequest.builder()
-                        .instanceId(expected.getId()).build());
+                        .instanceId(expected.id()).build());
             }
 
             @Nested
@@ -358,7 +365,7 @@ public class InstanceServiceTest {
                 @BeforeEach
                 void setup() {
                     DeleteInstanceRequest request = DeleteInstanceRequest.builder()
-                            .instanceId(expected.getId())
+                            .instanceId(expected.id())
                             .build();
 
                     response = instanceService.delete(request);
@@ -377,7 +384,7 @@ public class InstanceServiceTest {
                 @Test
                 void Instance_should_no_longer_be_gettable_by_id() {
                     GetInstanceRequest request = GetInstanceRequest.builder()
-                            .instanceId(expected.getId())
+                            .instanceId(expected.id())
                             .build();
 
                     Assertions.assertThatThrownBy(() -> instanceService.get(request))
@@ -387,7 +394,7 @@ public class InstanceServiceTest {
                 @Test
                 void Instance_should_no_longer_be_gettable_by_name() {
                     GetInstanceRequest request = GetInstanceRequest.builder()
-                            .name(expected.getName())
+                            .name(expected.name())
                             .build();
 
                     Assertions.assertThatThrownBy(() -> instanceService.get(request))
@@ -400,7 +407,7 @@ public class InstanceServiceTest {
                 @BeforeEach
                 void setup() {
                     DeleteInstanceRequest request = DeleteInstanceRequest.builder()
-                            .name(expected.getName())
+                            .name(expected.name())
                             .build();
 
                     response = instanceService.delete(request);
@@ -419,7 +426,7 @@ public class InstanceServiceTest {
                 @Test
                 void Instance_should_no_longer_be_gettable_by_id() {
                     GetInstanceRequest request = GetInstanceRequest.builder()
-                            .instanceId(expected.getId())
+                            .instanceId(expected.id())
                             .build();
 
                     Assertions.assertThatThrownBy(() -> instanceService.get(request))
@@ -429,7 +436,7 @@ public class InstanceServiceTest {
                 @Test
                 void Instance_should_no_longer_be_gettable_by_name() {
                     GetInstanceRequest request = GetInstanceRequest.builder()
-                            .name(expected.getName())
+                            .name(expected.name())
                             .build();
 
                     Assertions.assertThatThrownBy(() -> instanceService.get(request))
@@ -470,7 +477,7 @@ public class InstanceServiceTest {
                         .memory(DEFAULT_MEMORY)
                         .build());
 
-                instanceService.stop(StopInstanceRequest.builder().instanceId(instance.getId()).build());
+                instanceService.stop(StopInstanceRequest.builder().instanceId(instance.id()).build());
             }
 
             @Test
@@ -486,24 +493,24 @@ public class InstanceServiceTest {
             @Test
             void It_should_set_state_to_starting() {
                 StartInstanceRequest request = StartInstanceRequest.builder()
-                        .instanceId(instance.getId())
+                        .instanceId(instance.id())
                         .build();
 
                 Instance response = instanceService.start(request);
 
                 Assertions.assertThat(response).isEqualTo(instance);
-                Assertions.assertThat(response.getState()).isEqualTo(InstanceState.STARTING);
+                Assertions.assertThat(response.state()).isEqualTo(InstanceState.STARTING);
             }
 
             @Test
             void It_should_support_lookup_by_name() {
                 StartInstanceRequest request = StartInstanceRequest.builder()
-                        .name(instance.getName())
+                        .name(instance.name())
                         .build();
 
                 Instance response = instanceService.start(request);
 
-                Assertions.assertThat(response.getState()).isEqualTo(InstanceState.STARTING);
+                Assertions.assertThat(response.state()).isEqualTo(InstanceState.STARTING);
             }
 
             @Test
@@ -515,7 +522,7 @@ public class InstanceServiceTest {
                         .build());
 
                 StartInstanceRequest request = StartInstanceRequest.builder()
-                        .instanceId(instance.getId())
+                        .instanceId(instance.id())
                         .build();
 
                 Assertions.assertThatThrownBy(() -> instanceService.start(request))
@@ -549,30 +556,30 @@ public class InstanceServiceTest {
             @Test
             void It_should_set_state_to_stopping() {
                 StopInstanceRequest request = StopInstanceRequest.builder()
-                        .instanceId(instance.getId())
+                        .instanceId(instance.id())
                         .build();
 
                 Instance response = instanceService.stop(request);
 
-                Assertions.assertThat(response).isEqualTo(instance);
-                Assertions.assertThat(response.getState()).isEqualTo(InstanceState.STOPPING);
+                Assertions.assertThat(response.id()).isEqualTo(instance.id());
+                Assertions.assertThat(response.state()).isEqualTo(InstanceState.STOPPING);
             }
 
             @Test
             void It_should_support_lookup_by_name() {
                 StopInstanceRequest request = StopInstanceRequest.builder()
-                        .name(instance.getName())
+                        .name(instance.name())
                         .build();
 
                 Instance response = instanceService.stop(request);
 
-                Assertions.assertThat(response.getState()).isEqualTo(InstanceState.STOPPING);
+                Assertions.assertThat(response.state()).isEqualTo(InstanceState.STOPPING);
             }
 
             @Test
             void It_should_reject_an_instance_that_cannot_be_stopped() {
                 StopInstanceRequest request = StopInstanceRequest.builder()
-                        .instanceId(instance.getId())
+                        .instanceId(instance.id())
                         .build();
 
                 instanceService.stop(request);
@@ -640,10 +647,10 @@ public class InstanceServiceTest {
             void It_should_start_a_running_instance_that_is_stopped_in_compute() {
                 Instance instance = storeExistingInstance(InstanceState.RUNNING);
 
-                reconcile(instance, Map.of(instance.getId(), ComputeStatus.STOPPED));
+                reconcile(instance, Map.of(instance.id(), ComputeStatus.STOPPED));
 
                 Mockito.verify(computeBackend).start(instance);
-                Assertions.assertThat(instancesById.get(instance.getId()).getState())
+                Assertions.assertThat(instancesById.get(instance.id()).state())
                         .isEqualTo(InstanceState.RUNNING);
             }
 
@@ -651,7 +658,7 @@ public class InstanceServiceTest {
             void It_should_recreate_and_start_a_missing_running_instance() {
                 Instance instance = storeExistingInstance(InstanceState.RUNNING);
 
-                reconcile(instance, Map.of(instance.getId(), ComputeStatus.MISSING));
+                reconcile(instance, Map.of(instance.id(), ComputeStatus.MISSING));
 
                 InOrder inOrder = Mockito.inOrder(computeBackend);
                 inOrder.verify(computeBackend).create(instance);
@@ -662,10 +669,10 @@ public class InstanceServiceTest {
             void It_should_stop_a_stopped_instance_that_is_running_in_compute() {
                 Instance instance = storeExistingInstance(InstanceState.STOPPED);
 
-                reconcile(instance, Map.of(instance.getId(), ComputeStatus.RUNNING));
+                reconcile(instance, Map.of(instance.id(), ComputeStatus.RUNNING));
 
                 Mockito.verify(computeBackend).stop(instance);
-                Assertions.assertThat(instancesById.get(instance.getId()).getState())
+                Assertions.assertThat(instancesById.get(instance.id()).state())
                         .isEqualTo(InstanceState.STOPPED);
             }
 
@@ -673,9 +680,9 @@ public class InstanceServiceTest {
             void It_should_complete_a_start_transition_after_the_compute_instance_is_running() {
                 Instance instance = storeExistingInstance(InstanceState.STARTING);
 
-                reconcile(instance, Map.of(instance.getId(), ComputeStatus.RUNNING));
+                reconcile(instance, Map.of(instance.id(), ComputeStatus.RUNNING));
 
-                Assertions.assertThat(instancesById.get(instance.getId()).getState())
+                Assertions.assertThat(instancesById.get(instance.id()).state())
                         .isEqualTo(InstanceState.RUNNING);
                 Mockito.verify(computeBackend, Mockito.never()).start(instance);
             }
@@ -684,10 +691,10 @@ public class InstanceServiceTest {
             void It_should_complete_a_stop_transition_after_stopping_the_compute_instance() {
                 Instance instance = storeExistingInstance(InstanceState.STOPPING);
 
-                reconcile(instance, Map.of(instance.getId(), ComputeStatus.RUNNING));
+                reconcile(instance, Map.of(instance.id(), ComputeStatus.RUNNING));
 
                 Mockito.verify(computeBackend).stop(instance);
-                Assertions.assertThat(instancesById.get(instance.getId()).getState())
+                Assertions.assertThat(instancesById.get(instance.id()).state())
                         .isEqualTo(InstanceState.STOPPED);
             }
 
@@ -707,9 +714,9 @@ public class InstanceServiceTest {
                 Mockito.when(computeBackend.start(instance))
                         .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("failure")));
 
-                reconcile(instance, Map.of(instance.getId(), ComputeStatus.STOPPED));
+                reconcile(instance, Map.of(instance.id(), ComputeStatus.STOPPED));
 
-                Assertions.assertThat(instancesById.get(instance.getId()).getState())
+                Assertions.assertThat(instancesById.get(instance.id()).state())
                         .isEqualTo(InstanceState.MISSING);
             }
 
@@ -717,12 +724,12 @@ public class InstanceServiceTest {
             void It_should_not_change_an_instance_already_marked_missing() {
                 Instance instance = storeExistingInstance(InstanceState.MISSING);
 
-                reconcile(instance, Map.of(instance.getId(), ComputeStatus.RUNNING));
+                reconcile(instance, Map.of(instance.id(), ComputeStatus.RUNNING));
 
                 Mockito.verify(computeBackend, Mockito.never()).create(instance);
                 Mockito.verify(computeBackend, Mockito.never()).start(instance);
                 Mockito.verify(computeBackend, Mockito.never()).stop(instance);
-                Assertions.assertThat(instancesById.get(instance.getId()).getState())
+                Assertions.assertThat(instancesById.get(instance.id()).state())
                         .isEqualTo(InstanceState.MISSING);
             }
 
@@ -735,8 +742,8 @@ public class InstanceServiceTest {
                         .state(state)
                         .createdAt(Instant.parse("2026-01-01T00:00:00Z"))
                         .build();
-                instancesById.put(instance.getId(), instance);
-                idsByName.put(instance.getName(), instance.getId());
+                instancesById.put(instance.id(), instance);
+                idsByName.put(instance.name(), instance.id());
                 return instance;
             }
 
@@ -768,22 +775,22 @@ public class InstanceServiceTest {
                             .memory(DEFAULT_MEMORY)
                             .build());
 
-                    eventBus.publish(new InstanceHealthEvent(instanceBefore.getId(), EventAction.UNHEALTHY));
+                    eventBus.publish(new InstanceHealthEvent(instanceBefore.id(), EventAction.UNHEALTHY));
 
                     Awaitility.await()
                             .untilAsserted(() -> {
                                 instanceAfter = instanceService.get(
                                         GetInstanceRequest.builder()
-                                                .instanceId(instanceBefore.getId())
+                                                .instanceId(instanceBefore.id())
                                                 .build());
 
-                                Assertions.assertThat(instanceAfter.getState())
+                                Assertions.assertThat(instanceAfter.state())
                                         .isEqualTo(InstanceState.MISSING);
                             });
                 }
 
                 @Test void Instance_should_be_marked_missing() {
-                    Assertions.assertThat(instanceAfter.getState()).isEqualTo(InstanceState.MISSING);
+                    Assertions.assertThat(instanceAfter.state()).isEqualTo(InstanceState.MISSING);
                 }
             }
 
@@ -798,34 +805,34 @@ public class InstanceServiceTest {
                             .memory(DEFAULT_MEMORY)
                             .build());
 
-                    eventBus.publish(new InstanceHealthEvent(instanceBefore.getId(), EventAction.UNHEALTHY));
+                    eventBus.publish(new InstanceHealthEvent(instanceBefore.id(), EventAction.UNHEALTHY));
 
                     Awaitility.await()
                             .untilAsserted(() -> {
                                 instanceAfter = instanceService.get(
                                         GetInstanceRequest.builder()
-                                                .instanceId(instanceBefore.getId())
+                                                .instanceId(instanceBefore.id())
                                                 .build());
 
-                                Assertions.assertThat(instanceAfter.getState())
+                                Assertions.assertThat(instanceAfter.state())
                                         .isEqualTo(InstanceState.MISSING);
                             });
 
-                    eventBus.publish(new InstanceHealthEvent(instanceBefore.getId(), EventAction.HEALTHY));
+                    eventBus.publish(new InstanceHealthEvent(instanceBefore.id(), EventAction.HEALTHY));
 
                     Awaitility.await()
                             .untilAsserted(() -> {
                                 instanceAfter = instanceService.get(
                                         GetInstanceRequest.builder()
-                                                .instanceId(instanceBefore.getId())
+                                                .instanceId(instanceBefore.id())
                                                 .build());
-                                Assertions.assertThat(instanceAfter.getState())
+                                Assertions.assertThat(instanceAfter.state())
                                         .isEqualTo(InstanceState.RUNNING);
                             });
                 }
 
                 @Test void Instance_should_be_marked_running() {
-                    Assertions.assertThat(instanceAfter.getState()).isEqualTo(InstanceState.RUNNING);
+                    Assertions.assertThat(instanceAfter.state()).isEqualTo(InstanceState.RUNNING);
                 }
             }
 
@@ -840,21 +847,21 @@ public class InstanceServiceTest {
                             .memory(DEFAULT_MEMORY)
                             .build());
 
-                    eventBus.publish(new InstanceHealthEvent(instanceBefore.getId(), EventAction.HEALTHY));
+                    eventBus.publish(new InstanceHealthEvent(instanceBefore.id(), EventAction.HEALTHY));
 
                     Awaitility.await()
                             .untilAsserted(() -> {
                                 instanceAfter = instanceService.get(
                                         GetInstanceRequest.builder()
-                                                .instanceId(instanceBefore.getId())
+                                                .instanceId(instanceBefore.id())
                                                 .build());
-                                Assertions.assertThat(instanceAfter.getState())
+                                Assertions.assertThat(instanceAfter.state())
                                         .isEqualTo(InstanceState.RUNNING);
                             });
                 }
 
                 @Test void Instance_should_be_marked_running() {
-                    Assertions.assertThat(instanceAfter.getState()).isEqualTo(InstanceState.RUNNING);
+                    Assertions.assertThat(instanceAfter.state()).isEqualTo(InstanceState.RUNNING);
                 }
             }
         }

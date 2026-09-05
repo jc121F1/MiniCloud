@@ -1,19 +1,9 @@
 package jc121f1.model.instance.api.request;
 
-import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
 
 import javax.annotation.Nullable;
 
 @Builder
-@NoArgsConstructor
-@AllArgsConstructor
-@Getter
-public class DeleteInstanceRequest {
-    @Nullable
-    private String instanceId;
-    @Nullable
-    private String name;
+public record DeleteInstanceRequest(@Nullable String instanceId, @Nullable String name) {
 }

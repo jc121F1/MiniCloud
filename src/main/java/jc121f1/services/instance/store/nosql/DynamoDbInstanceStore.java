@@ -126,7 +126,7 @@ public class DynamoDbInstanceStore implements InstanceStore {
         Map<String, AttributeValue> nameLockItem = Map.of(
                 "id",
                 AttributeValue.builder()
-                        .s("__name_lock__" + instance.getName())
+                        .s("__name_lock__" + instance.name())
                         .build()
         );
 
@@ -168,7 +168,7 @@ public class DynamoDbInstanceStore implements InstanceStore {
 
         List<TransactWriteItem> items = new ArrayList<>();
 
-        if (!previous.getName().equals(updated.getName())) {
+        if (!previous.name().equals(updated.name())) {
             items.add(
                     TransactWriteItem.builder()
                             .delete(delete -> delete
@@ -176,7 +176,7 @@ public class DynamoDbInstanceStore implements InstanceStore {
                                     .key(Map.of(
                                             "id",
                                             AttributeValue.builder()
-                                                    .s("__name_lock__" + previous.getName())
+                                                    .s("__name_lock__" + previous.name())
                                                     .build()
                                     )))
                             .build()
@@ -189,7 +189,7 @@ public class DynamoDbInstanceStore implements InstanceStore {
                                     .item(Map.of(
                                             "id",
                                             AttributeValue.builder()
-                                                    .s("__name_lock__" + updated.getName())
+                                                    .s("__name_lock__" + updated.name())
                                                     .build()
                                     ))
                                     .conditionExpression("attribute_not_exists(id)")
@@ -212,7 +212,7 @@ public class DynamoDbInstanceStore implements InstanceStore {
                                 .expressionAttributeValues(Map.of(
                                         ":previousName",
                                         AttributeValue.builder()
-                                                .s(previous.getName())
+                                                .s(previous.name())
                                                 .build()
                                 ))
                                 .build())
@@ -239,7 +239,7 @@ public class DynamoDbInstanceStore implements InstanceStore {
                                                 .key(Map.of(
                                                         "id",
                                                         AttributeValue.builder()
-                                                                .s(instance.getId())
+                                                                .s(instance.id())
                                                                 .build()
                                                 )))
                                         .build(),
@@ -249,7 +249,7 @@ public class DynamoDbInstanceStore implements InstanceStore {
                                                 .key(Map.of(
                                                         "id",
                                                         AttributeValue.builder()
-                                                                .s("__name_lock__" + instance.getName())
+                                                                .s("__name_lock__" + instance.name())
                                                                 .build()
                                                 )))
                                         .build()
