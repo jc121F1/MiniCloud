@@ -39,10 +39,6 @@ public class InstanceServiceImpl implements InstanceService {
 
     private final EventBus eventBus;
 
-    @SuppressFBWarnings(
-            value = "EI_EXPOSE_REP2",
-            justification = "instanceStore is an injected service dependency and is intentionally shared."
-    )
     private final InstanceStore instanceStore;
 
     @Inject
