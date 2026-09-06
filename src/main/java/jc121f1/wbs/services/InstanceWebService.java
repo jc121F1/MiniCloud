@@ -5,7 +5,6 @@ import io.javalin.openapi.plugin.OpenApiPlugin;
 import io.javalin.openapi.plugin.redoc.ReDocPlugin;
 import io.javalin.openapi.plugin.swagger.SwaggerPlugin;
 import jc121f1.dagger.instance.InstanceWebServiceComponent;
-import jc121f1.services.instance.compute.ComputeBackend;
 import jc121f1.wbs.WebService;
 import jc121f1.wbs.exceptions.MiniCloudExceptionMapper;
 import jc121f1.wbs.handlers.RootHandler;
@@ -47,7 +46,6 @@ public class InstanceWebService extends WebService {
         DeleteInstanceHandler deleteInstanceHandler = component.deleteInstanceHandler();
         StopInstanceHandler stopInstanceHandler = component.stopInstanceHandler();
         StartInstanceHandler startInstanceHandler = component.startInstanceHandler();
-        ComputeBackend computeBackend = component.computeBackend();
         //Boolean debug = component.debug();
         Boolean disableJmDNS = component.disableJmDNS();
         MiniCloudExceptionMapper exceptionMapper = component.exceptionMapper();
@@ -69,8 +67,6 @@ public class InstanceWebService extends WebService {
                 if (!disableJmDNS) {
                     this.stopJmdns(HOSTNAME);
                 }
-
-                computeBackend.close();
             });
             config.routes.apiBuilder(() -> {
                 get(rootHandler);
