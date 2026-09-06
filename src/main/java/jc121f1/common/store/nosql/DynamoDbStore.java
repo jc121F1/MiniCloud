@@ -45,9 +45,9 @@ public abstract class DynamoDbStore<T> implements GenericStore<T> {
     private static final String UNIQUE_LOCK_RECORD_TYPE =
             "UNIQUE_LOCK";
 
-    private final DynamoDbAsyncClient dynamoDbAsyncClient;
+    protected final DynamoDbAsyncClient dynamoDbAsyncClient;
 
-    private final DynamoDbAsyncTable<T> table;
+    protected final DynamoDbAsyncTable<T> table;
 
     private final DynamoDbStoreDefinition<T> definition;
 
@@ -587,7 +587,7 @@ public abstract class DynamoDbStore<T> implements GenericStore<T> {
                                     .toList();
 
                     return table.createTable(request ->
-                                    request.globalSecondaryIndices(indices))
+                                request.globalSecondaryIndices(indices))
                             .thenCompose(_ ->
                                     dynamoDbAsyncClient
                                             .waiter()
