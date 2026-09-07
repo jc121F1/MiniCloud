@@ -1,4 +1,5 @@
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+import com.github.spotbugs.snom.SpotBugsTask
 
 plugins {
     java
@@ -8,6 +9,7 @@ plugins {
     id("io.freefair.lombok") version "9.5.0"
     id("com.gradleup.shadow") version "9.6.1"
     id("com.github.spotbugs") version "6.5.11"
+    id("org.openapi.generator") version "7.25.0"
 }
 
 System.setProperty("DEBUG_APP", "true")
@@ -45,6 +47,7 @@ dependencies {
     implementation("com.google.dagger:dagger:2.60.1")
     implementation("org.slf4j:slf4j-api:2.0.18")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.22.2")
+    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.22.2")
     implementation("com.github.docker-java:docker-java:3.7.1")
     implementation("org.jmdns:jmdns:3.6.3")
     implementation("com.github.docker-java:docker-java-transport-httpclient5:3.7.1")
@@ -77,6 +80,74 @@ tasks {
     }
 }
 
+sourceSets {
+    main {
+        java {
+            srcDir(
+                layout.buildDirectory
+                    .dir("generated/openapi-client/src/main/java")
+            )
+        }
+    }
+}
+
+val openApiSpecClasses = layout.buildDirectory.dir(
+    "openapi-spec/classes"
+)
+
+val openApiSpecFile = openApiSpecClasses.map {
+    it.file("openapi-plugin/openapi-default.json")
+}
+
+val generateOpenApiSpec = tasks.register<JavaCompile>("generateOpenApiSpec") {
+    description = "Generates the OpenAPI specification using the project's annotation processors."
+
+    source = sourceSets.main.get().java
+
+    classpath = sourceSets.main.get().compileClasspath
+
+    destinationDirectory.set(openApiSpecClasses)
+
+    options.annotationProcessorPath = configurations.annotationProcessor.get()
+
+    options.compilerArgs.add("-proc:only")
+
+    options.release.set(25)
+}
+
+tasks.openApiGenerate {
+    dependsOn(generateOpenApiSpec)
+
+    generatorName.set("java")
+
+    inputSpec.set(openApiSpecFile)
+
+    outputDir.set(
+        layout.buildDirectory.dir("generated/openapi-client")
+    )
+
+    apiPackage.set("jc121f1.minicloud.client.api")
+    modelPackage.set("jc121f1.minicloud.client.model")
+    invokerPackage.set("jc121f1.minicloud.client")
+
+    configOptions.put("library", "native")
+    configOptions.put("dateLibrary", "java8")
+    configOptions.put("serializationLibrary", "jackson")
+    configOptions.put("useJakartaEe", "true")
+    configOptions.put("openApiNullable", "false")
+
+    generateApiTests.set(false)
+    generateModelTests.set(false)
+    generateApiDocumentation.set(true)
+    generateModelDocumentation.set(true)
+
+    cleanupOutput.set(true)
+}
+
+tasks.named<JavaCompile>("compileJava") {
+    dependsOn(tasks.openApiGenerate)
+}
+
 tasks.named<ShadowJar>("shadowJar") {
     manifest {
         attributes["Main-Class"] = "jc121f1.Main"
@@ -107,6 +178,14 @@ tasks.build {
 
         println()
         println(report.toURI())
+        println(
+            "OpenAPI client generated at: " +
+                    layout.buildDirectory
+                        .dir("generated/openapi-client")
+                        .get()
+                        .asFile
+                        .absolutePath
+        )
     }
 }
 
@@ -116,8 +195,15 @@ tasks.named<Checkstyle>("checkstyleMain") {
 
 tasks.named<Checkstyle>("checkstyleTest") {
     configFile = file("config/checkstyle/checkstyleTest.xml")
+    exclude("**/generated/**")
 }
 
-tasks.named<com.github.spotbugs.snom.SpotBugsTask>("spotbugsTest") {
+tasks.named<SpotBugsTask>("spotbugsMain") {
+    excludeFilter.set(
+        file("$projectDir/config/spotbugs/spotbugs-exclude.xml")
+    )
+}
+
+tasks.named<SpotBugsTask>("spotbugsTest") {
     enabled = false
 }
