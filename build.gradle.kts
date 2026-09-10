@@ -45,7 +45,7 @@ dependencies {
     implementation("io.javalin.community.openapi:javalin-swagger-plugin:${openapi}")
     implementation("io.javalin.community.openapi:javalin-redoc-plugin:${openapi}")
     implementation("com.google.dagger:dagger:2.60.1")
-    implementation("org.slf4j:slf4j-api:2.0.18")
+    implementation("org.slf4j:slf4j-api:2.0.19")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.22.2")
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.22.2")
     implementation("com.github.docker-java:docker-java:3.7.1")
