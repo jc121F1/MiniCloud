@@ -6,6 +6,7 @@ import jc121f1.wbs.exceptions.customererrors.CustomerFacingError;
 import jc121f1.wbs.exceptions.customererrors.InternalServerError;
 import jc121f1.wbs.exceptions.customererrors.ResourceNotFoundError;
 import jc121f1.wbs.exceptions.customererrors.ValidationError;
+import jc121f1.wbs.exceptions.customererrors.UnauthorizedError;
 
 
 import javax.inject.Inject;
@@ -16,6 +17,7 @@ public class MiniCloudExceptionMapper {
 
     private final Map<Class<? extends RuntimeException>,
             Function<String, CustomerFacingError>> exceptionMap = Map.of(
+            jc121f1.services.instance.exceptions.UnauthorizedException.class, UnauthorizedError::new,
             jc121f1.services.instance.exceptions.ValidationException.class, ValidationError::new,
             jc121f1.services.instance.exceptions.ConflictException.class, ConflictError::new,
             jc121f1.services.instance.exceptions.ResourceNotFoundException.class, ResourceNotFoundError::new

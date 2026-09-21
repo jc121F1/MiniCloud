@@ -34,8 +34,8 @@ public class LoginHandler extends AuthHandler {
     public void handle(@NotNull Context ctx) {
         LoginRequest request = ctx.bodyAsClass(LoginRequest.class);
 
-        Session user = authService.login(request);
+        Session session = authService.login(request);
 
-        ctx.json(user);
+        ctx.json(session);
     }
 }
