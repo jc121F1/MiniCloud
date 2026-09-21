@@ -75,6 +75,16 @@ V1 validation limits are 32 statements, 32 action entries and 32 resource entrie
 
 Use conditional revisions for updates and atomic attachment changes. Reject deletion of an attached policy. Authorization reads must observe completed policy updates/detachments; do not cache grants in sessions or rely on eventually consistent indexes for enforcement. Storage failures fail closed and surface as service errors. Requests already authorized may complete; revocation is not cancellation of in-flight work.
 
+`PolicyStore` is a trusted persistence interface; the forthcoming `PolicyService` implementation must authorize callers, validate documents, and resolve principal existence before using it. `DynamoDbPolicyStore` uses the dedicated `MiniCloudAuthorizationStore` table with `pk`/`sk` keys. Policy rows use account partitions; attachment rows use account plus principal type/ID partitions. Base-table queries and point reads are strongly consistent and queries follow all pages.
+
+The policy store extends `common.store.nosql.DynamoDbStore<PolicyRecord>`. The common layer owns Enhanced Client mapping, table initialization, composite-key access, query pagination, and transaction execution. Its CRUD transaction builders can be composed with conditional attribute updates, while ordinary update/delete now accept optional persisted-state conditions. Default CRUD semantics remain unchanged. Partial updates are restricted to stores without unique constraints; constrained stores must use the CRUD builders so unique-lock changes remain atomic. Composite-key stores currently reject unique-constraint definitions because the existing unique-lock format is partition-only.
+
+Policy documents use the Enhanced Client's nested document mapping; there is no Authz-specific JSON persistence codec. Revision predicates, attachment counts, tombstones, and Authz error translation stay in the policy store. The unverified earlier JSON-string storage prototype is replaced, not automatically migrated.
+
+Each policy tracks an attachment count. Attach/detach transactions conditionally change that count together with the attachment row, so duplicate requests cannot drift the count. Updates compare revisions without overwriting the count. Deletion atomically requires the expected revision and zero attachments, removes the document, and retains an ID tombstone. Tombstones are excluded from reads and prevent deleted IDs from being reused within the account. Attachment changes do not increment document revisions.
+
+Conflicting concurrent operations either resolve idempotently or report a conflict for the caller to retry. Throttling/unavailability and malformed stored data are storage errors. Reads spanning multiple rows are not a single database snapshot: a concurrent detach followed by deletion may make an in-flight attachment read fail closed and require retry. Completed changes are visible to later evaluations. DynamoDB transactions are internal to Authz; future resource services access Authz through its API, not this table.
+
 New-account signup establishes the first user as owner through the existing account creation flow. Ownership transfer requires the current owner and an existing same-account user, and updates ownership atomically. Reject deletion of the current owner. Lost-owner recovery is an explicit operator procedure outside the public API; no unauthenticated recovery endpoint.
 
 ## Enforcement and verification
@@ -97,8 +107,8 @@ After decomposition, authenticate both the calling service and the end-user iden
 
 ## Implementation checkpoints
 
-1. Contracts, service-owned action catalogs, policy validator, management errors, and credential creator metadata: implemented with tests; awaiting user-run verification, including the catalog refactor. Creator/account reassignment is rejected by normal credential-store updates, including attempts to assign an inferred creator to legacy credentials. Legacy credentials remain readable; the forthcoming evaluator must deny credentials without a creator.
-2. Policy persistence with atomic revisions/attachments and consistent reads: pending.
+1. Contracts, service-owned action catalogs, policy validator, management errors, and credential creator metadata: user confirmed the checks passed, including the catalog refactor. Creator/account reassignment is rejected by normal credential-store updates, including attempts to assign an inferred creator to legacy credentials. Legacy credentials remain readable; the forthcoming evaluator must deny credentials without a creator.
+2. Policy persistence using the extended common store: implemented with common-layer regression tests and Authz DynamoDB Local transaction/concurrency tests; awaiting user-run verification of the refactor. Local tests require DynamoDB at localhost:8000 and `DynamoDbLocalAvailable=True`; Authz tests create and remove a uniquely named test table.
 3. Authorization evaluator and enforcement tests: pending.
 4. Policy-management implementation and concurrency tests: pending.
 5. Management API, audit records, and integration tests: pending.

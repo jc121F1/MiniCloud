@@ -10,6 +10,7 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
+import software.amazon.awssdk.enhanced.dynamodb.Expression;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbPartitionKey;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSecondaryPartitionKey;
@@ -579,6 +580,31 @@ class DynamoDbStoreTest {
         );
     }
 
+    @Test
+    void conditional_mutations_reject_stale_state_without_changing_unique_locks() {
+        TestItem first = item("1", "First", "first@example.com");
+        TestItem current = item("1", "Current", "current@example.com");
+        TestItem stale = item("1", "Stale", "stale@example.com");
+        store.create(first).join();
+        Expression expected = Expression.builder().expression("#email = :expected")
+                .expressionNames(Map.of("#email", "email"))
+                .expressionValues(Map.of(":expected", AttributeValue.builder().s(first.getEmail()).build())).build();
+        store.update(first, current, expected).join();
+        assertThatThrownBy(() -> store.update(first, stale, expected).join()).isInstanceOf(CompletionException.class);
+        assertThatThrownBy(() -> store.delete(first, expected).join()).isInstanceOf(CompletionException.class);
+        assertThat(store.get("1", true).join()).contains(current);
+        assertThatThrownBy(() -> store.create(item("2", "Duplicate", current.getEmail())).join())
+                .isInstanceOf(CompletionException.class);
+        store.create(item("3", "Released", first.getEmail())).join();
+        store.create(item("4", "Unclaimed", stale.getEmail())).join();
+    }
+
+    @Test
+    void partial_updates_cannot_bypass_unique_lock_maintenance() {
+        assertThatThrownBy(() -> store.patchEmail(item("1", "One", "one@example.com")))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("unique locks");
+    }
+
     private void clearTable() {
         Map<String, AttributeValue> exclusiveStartKey = null;
 
@@ -622,6 +648,12 @@ class DynamoDbStoreTest {
 
         protected CompletableFuture<Void> initialize() {
             return super.initialize();
+        }
+
+        private void patchEmail(TestItem item) {
+            updateAttributes(keyOf(item), Expression.builder().expression("SET email = :email")
+                            .expressionValues(Map.of(":email", AttributeValue.builder().s("changed@example.com").build())).build(),
+                    Expression.builder().expression("attribute_exists(id)").build());
         }
 
         private CompletableFuture<List<TestItem>> findByEmail(

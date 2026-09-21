@@ -6,6 +6,7 @@ import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbAsyncTable;
+import software.amazon.awssdk.enhanced.dynamodb.Expression;
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
 
 import java.util.List;
@@ -22,6 +23,9 @@ class CredentialOwnershipTest {
         for (Credential updated : List.of(original.toBuilder().createdByUserId("u-2").build(),
                 original.toBuilder().createdByUserId(null).build(), original.toBuilder().accountId("a-2").build())) {
             Assertions.assertThatThrownBy(() -> store.update(original, updated))
+                    .isInstanceOf(IllegalArgumentException.class);
+            Assertions.assertThatThrownBy(() -> store.update(original, updated,
+                    Expression.builder().expression("attribute_exists(credentialId)").build()))
                     .isInstanceOf(IllegalArgumentException.class);
         }
         Credential legacy = original.toBuilder().createdByUserId(null).build();

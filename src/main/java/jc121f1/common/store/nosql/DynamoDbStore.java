@@ -7,6 +7,7 @@ import software.amazon.awssdk.enhanced.dynamodb.DynamoDbAsyncTable;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedAsyncClient;
 import software.amazon.awssdk.enhanced.dynamodb.Expression;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
+import software.amazon.awssdk.enhanced.dynamodb.TableMetadata;
 import software.amazon.awssdk.enhanced.dynamodb.model.EnhancedGlobalSecondaryIndex;
 import software.amazon.awssdk.enhanced.dynamodb.model.Page;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
@@ -19,6 +20,7 @@ import software.amazon.awssdk.services.dynamodb.model.ResourceInUseException;
 import software.amazon.awssdk.services.dynamodb.model.ResourceNotFoundException;
 import software.amazon.awssdk.services.dynamodb.model.TransactWriteItem;
 import software.amazon.awssdk.services.dynamodb.model.TransactWriteItemsRequest;
+import software.amazon.awssdk.services.dynamodb.model.Update;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -114,6 +116,10 @@ public abstract class DynamoDbStore<T> implements GenericStore<T> {
 
     @Override
     public CompletableFuture<Optional<T>> get(String id) {
+        return get(id, false);
+    }
+
+    public CompletableFuture<Optional<T>> get(String id, boolean consistentRead) {
         Objects.requireNonNull(
                 id,
                 "id must not be null"
@@ -129,13 +135,16 @@ public abstract class DynamoDbStore<T> implements GenericStore<T> {
             );
         }
 
-        return table.getItem(request ->
-                request.key(
-                        Key.builder()
-                                .partitionValue(id)
-                                .build()
-                )
-        ).thenApply(Optional::ofNullable);
+        return get(Key.builder().partitionValue(id).build(), consistentRead);
+    }
+
+    /** Reads a complete primary key, including a sort key for composite tables. */
+    public CompletableFuture<Optional<T>> get(Key key, boolean consistentRead) {
+        keyMap(key);
+        if (key.partitionKeyValue().s() != null && isUniqueLockId(key.partitionKeyValue().s())) {
+            return CompletableFuture.completedFuture(Optional.empty());
+        }
+        return table.getItem(request -> request.key(key).consistentRead(consistentRead)).thenApply(Optional::ofNullable);
     }
 
     @Override
@@ -161,6 +170,11 @@ public abstract class DynamoDbStore<T> implements GenericStore<T> {
 
     @Override
     public CompletableFuture<T> create(T item) {
+        return transact(createItems(item)).thenApply(ignored -> item);
+    }
+
+    /** Includes unique-lock writes; compose the entire returned list in one transaction. */
+    protected List<TransactWriteItem> createItems(T item) {
         Objects.requireNonNull(
                 item,
                 "item must not be null"
@@ -223,13 +237,8 @@ public abstract class DynamoDbStore<T> implements GenericStore<T> {
             );
         }
 
-        return dynamoDbAsyncClient
-                .transactWriteItems(
-                        TransactWriteItemsRequest.builder()
-                                .transactItems(transactItems)
-                                .build()
-                )
-                .thenApply(_ -> item);
+        keyOf(item);
+        return List.copyOf(transactItems);
     }
 
     @Override
@@ -237,6 +246,15 @@ public abstract class DynamoDbStore<T> implements GenericStore<T> {
             T previous,
             T updated
     ) {
+        return update(previous, updated, null);
+    }
+
+    /** Adds a persisted-state condition to the existing item-existence check. */
+    public CompletableFuture<T> update(T previous, T updated, Expression condition) {
+        return transact(updateItems(previous, updated, condition)).thenApply(ignored -> updated);
+    }
+
+    protected List<TransactWriteItem> updateItems(T previous, T updated, Expression condition) {
         Objects.requireNonNull(
                 previous,
                 "previous must not be null"
@@ -253,7 +271,7 @@ public abstract class DynamoDbStore<T> implements GenericStore<T> {
         String updatedId =
                 definition.extractId(updated);
 
-        if (!previousId.equals(updatedId)) {
+        if (!previousId.equals(updatedId) || !keyOf(previous).equals(keyOf(updated))) {
             throw new IllegalArgumentException(
                     "Item id cannot be changed during update"
             );
@@ -319,6 +337,8 @@ public abstract class DynamoDbStore<T> implements GenericStore<T> {
         /*
          * Update the actual item.
          */
+        Expression updateCondition = combine(Expression.builder().expression("attribute_exists(#id)")
+                .expressionNames(Map.of("#id", partitionKeyName)).build(), condition);
         transactItems.add(
                 TransactWriteItem.builder()
                         .put(
@@ -327,38 +347,33 @@ public abstract class DynamoDbStore<T> implements GenericStore<T> {
                                                 definition.tableName()
                                         )
                                         .item(updatedItemMap)
-                                        .conditionExpression(
-                                                "attribute_exists(#id)"
-                                        )
-                                        .expressionAttributeNames(
-                                                Map.of(
-                                                        "#id",
-                                                        partitionKeyName
-                                                )
-                                        )
+                                        .conditionExpression(updateCondition.expression())
+                                        .expressionAttributeNames(nonEmpty(updateCondition.expressionNames()))
+                                        .expressionAttributeValues(nonEmpty(updateCondition.expressionValues()))
                                         .build()
                         )
                         .build()
         );
 
-        return dynamoDbAsyncClient
-                .transactWriteItems(
-                        TransactWriteItemsRequest.builder()
-                                .transactItems(transactItems)
-                                .build()
-                )
-                .thenApply(_ -> updated);
+        return List.copyOf(transactItems);
     }
 
     @Override
     public CompletableFuture<Void> delete(T item) {
+        return delete(item, null);
+    }
+
+    public CompletableFuture<Void> delete(T item, Expression condition) {
+        return transact(deleteItems(item, condition));
+    }
+
+    protected List<TransactWriteItem> deleteItems(T item, Expression condition) {
         Objects.requireNonNull(
                 item,
                 "item must not be null"
         );
 
-        String id =
-                definition.extractId(item);
+        definition.extractId(item);
 
         List<TransactWriteItem> transactItems =
                 new ArrayList<>();
@@ -373,12 +388,10 @@ public abstract class DynamoDbStore<T> implements GenericStore<T> {
                                         .tableName(
                                                 definition.tableName()
                                         )
-                                        .key(
-                                                Map.of(
-                                                        partitionKeyName,
-                                                        stringAttribute(id)
-                                                )
-                                        )
+                                        .key(keyMap(keyOf(item)))
+                                        .conditionExpression(condition == null ? null : condition.expression())
+                                        .expressionAttributeNames(condition == null ? null : nonEmpty(condition.expressionNames()))
+                                        .expressionAttributeValues(condition == null ? null : nonEmpty(condition.expressionValues()))
                                         .build()
                         )
                         .build()
@@ -398,13 +411,89 @@ public abstract class DynamoDbStore<T> implements GenericStore<T> {
             );
         }
 
-        return dynamoDbAsyncClient
-                .transactWriteItems(
-                        TransactWriteItemsRequest.builder()
-                                .transactItems(transactItems)
-                                .build()
-                )
-                .thenApply(_ -> null);
+        return List.copyOf(transactItems);
+    }
+
+    /** Base-table queries support strong consistency; GSIs do not. SDK pages are consumed fully. */
+    protected CompletableFuture<List<T>> query(QueryConditional condition, boolean consistentRead) {
+        List<T> items = new CopyOnWriteArrayList<>();
+        return table.query(request -> request.queryConditional(condition).consistentRead(consistentRead)
+                        .filterExpression(Expression.builder().expression("#recordType = :itemType")
+                                .expressionNames(Map.of("#recordType", RECORD_TYPE_ATTRIBUTE))
+                                .expressionValues(Map.of(":itemType", stringAttribute(ITEM_RECORD_TYPE))).build()))
+                .items().subscribe(items::add).thenApply(ignored -> List.copyOf(items));
+    }
+
+    /** Partial attribute update for stores without unique constraints, suitable for counters and revisions.
+     * Callers must preserve the item discriminator; DynamoDB rejects primary-key changes.
+     */
+    protected TransactWriteItem updateAttributes(Key key, Expression update, Expression condition) {
+        Objects.requireNonNull(condition, "condition");
+        if (!definition.uniqueConstraints().isEmpty()) {
+            throw new IllegalStateException("Partial updates cannot maintain unique locks; use updateItems");
+        }
+        Map<String, String> names = merge(update.expressionNames(), condition.expressionNames());
+        Map<String, AttributeValue> values = merge(update.expressionValues(), condition.expressionValues());
+        return TransactWriteItem.builder().update(Update.builder().tableName(definition.tableName()).key(keyMap(key))
+                .updateExpression(update.expression()).conditionExpression(condition.expression())
+                .expressionAttributeNames(nonEmpty(names)).expressionAttributeValues(nonEmpty(values)).build()).build();
+    }
+
+    protected CompletableFuture<Void> transact(List<TransactWriteItem> items) {
+        if (items.isEmpty() || items.size() > 100) {
+            throw new IllegalArgumentException("Transactions require 1 to 100 items");
+        }
+        return dynamoDbAsyncClient.transactWriteItems(TransactWriteItemsRequest.builder().transactItems(items).build())
+                .thenApply(ignored -> null);
+    }
+
+    /** Uses the same schema mapping as ordinary CRUD, including nested document attributes. */
+    protected Map<String, AttributeValue> attributes(T item) {
+        return definition.tableSchema().itemToMap(item, true);
+    }
+
+    protected Key keyOf(T item) {
+        Map<String, AttributeValue> values = attributes(item);
+        Key.Builder key = Key.builder().partitionValue(Objects.requireNonNull(values.get(partitionKeyName), "partition key"));
+        definition.tableSchema().tableMetadata().primarySortKey()
+                .ifPresent(name -> key.sortValue(Objects.requireNonNull(values.get(name), "sort key")));
+        return key.build();
+    }
+
+    private Map<String, AttributeValue> keyMap(Key key) {
+        if (definition.tableSchema().tableMetadata().primarySortKey().isPresent() && key.sortKeyValue().isEmpty()) {
+            throw new IllegalArgumentException("Sort key is required");
+        }
+        return key.keyMap(definition.tableSchema(), TableMetadata.primaryIndexName());
+    }
+
+    private static Expression combine(Expression first, Expression second) {
+        if (second == null) {
+            return first;
+        }
+        return Expression.builder().expression("(" + first.expression() + ") AND (" + second.expression() + ")")
+                .expressionNames(merge(first.expressionNames(), second.expressionNames()))
+                .expressionValues(merge(first.expressionValues(), second.expressionValues())).build();
+    }
+
+    private static <V> Map<String, V> merge(Map<String, V> first, Map<String, V> second) {
+        Map<String, V> result = new HashMap<>();
+        if (first != null) {
+            result.putAll(first);
+        }
+        if (second != null) {
+            second.forEach((key, value) -> {
+                V existing = result.putIfAbsent(key, value);
+                if (existing != null && !existing.equals(value)) {
+                    throw new IllegalArgumentException("Conflicting expression placeholder: " + key);
+                }
+            });
+        }
+        return result;
+    }
+
+    private static <V> Map<String, V> nonEmpty(Map<String, V> values) {
+        return values == null || values.isEmpty() ? null : values;
     }
 
     /**
@@ -631,7 +720,7 @@ public abstract class DynamoDbStore<T> implements GenericStore<T> {
                 .thenCompose(future -> future);
     }
 
-    private Throwable unwrap(Throwable throwable) {
+    protected static Throwable unwrap(Throwable throwable) {
         Throwable cause = throwable;
 
         while (
