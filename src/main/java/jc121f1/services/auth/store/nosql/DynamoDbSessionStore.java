@@ -36,7 +36,7 @@ public class DynamoDbSessionStore extends DynamoDbStore<Session> implements Sess
         return new DynamoDbStoreDefinition<>(
                 TABLE_NAME,
                 TableSchema.fromImmutableClass(Session.class),
-                Session::toString,
+                Session::token,
                 List.of(),
                 List.of()
         );
@@ -48,7 +48,7 @@ public class DynamoDbSessionStore extends DynamoDbStore<Session> implements Sess
                         .tableName(TABLE_NAME)
                         .timeToLiveSpecification(
                                 TimeToLiveSpecification.builder()
-                                        .attributeName("expiredAt")
+                                        .attributeName("expiresAt")
                                         .enabled(true)
                                         .build())
                         .build());
