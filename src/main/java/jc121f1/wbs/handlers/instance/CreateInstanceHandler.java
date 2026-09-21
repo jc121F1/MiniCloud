@@ -23,7 +23,7 @@ public class CreateInstanceHandler extends InstanceHandler {
     @OpenApi(
             summary = "Create instance",
             operationId = "createInstance",
-            path = "/instances/create",
+            path = "/instances",
             methods = HttpMethod.POST,
             tags = {"Instance"},
             requestBody = @OpenApiRequestBody(content = {@OpenApiContent(from = CreateInstanceRequest.class)}),

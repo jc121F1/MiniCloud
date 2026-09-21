@@ -27,7 +27,7 @@ public class ListInstanceHandler extends InstanceHandler {
             methods = HttpMethod.GET,
             tags = {"Instance"},
             responses = {
-                    @OpenApiResponse(status = "200", content = {@OpenApiContent(from = List.class)})
+                    @OpenApiResponse(status = "200", content = {@OpenApiContent(from = Instance[].class)})
             }
     )
     @Override
