@@ -22,6 +22,7 @@ public record Account(
         @DynamoDbPartitionKey @OpenApiRequired String accountId,         // e.g. "acct_7f3a9c" — public identifier
         @OpenApiRequired String name,               // display name, e.g. "Acme Corp"
         @OpenApiRequired AccountStatus status,      // ACTIVE, SUSPENDED, CLOSED
+        @DynamoDbSecondaryPartitionKey(indexNames = "AccountOwnerIndex")
         @OpenApiRequired String ownerId,         // userId of the original creator/billing owner
         @OpenApiRequired
         @JsonSerialize(using = TruncatedInstantSerializer.class)
@@ -35,19 +36,6 @@ public record Account(
 
     @JsonPOJOBuilder(withPrefix = "")
     public static class AccountBuilder {
-
-        @DynamoDbPartitionKey
-        public Account.AccountBuilder accountId(String accountId) {
-            this.accountId = accountId;
-            return this;
-        }
-
-        @DynamoDbSecondaryPartitionKey(indexNames = "AccountOwnerIndex")
-        @OpenApiIgnore
-        public Account.AccountBuilder accountOwnerId(String accountOwnerId) {
-            this.accountId = accountOwnerId;
-            return this;
-        }
     }
 
     public enum AccountStatus {
