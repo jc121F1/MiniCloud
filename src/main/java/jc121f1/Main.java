@@ -1,5 +1,7 @@
 package jc121f1;
 
+import jc121f1.dagger.auth.DaggerAuthWebServiceComponent;
+import jc121f1.wbs.services.AuthWebService;
 import jc121f1.dagger.instance.DaggerInstanceWebServiceComponent;
 import jc121f1.dagger.instance.InstanceWebServiceComponent;
 import jc121f1.wbs.WebService;
@@ -9,8 +11,11 @@ import jc121f1.wbs.services.InstanceWebService;
 // click the <icon src="AllIcons.Actions.Execute"/> icon in the gutter.
 public class Main {
     static void main(String[] args) {
+        new AuthWebService(DaggerAuthWebServiceComponent.create()).start();
         InstanceWebServiceComponent component = DaggerInstanceWebServiceComponent.create();
         WebService instanceService = new InstanceWebService(component);
+        WebService authService = new AuthWebService(DaggerAuthWebServiceComponent.create());
         instanceService.start();
+        authService.start();
     }
 }
