@@ -8,6 +8,7 @@ import jc121f1.dagger.instance.InstanceWebServiceComponent;
 import jc121f1.wbs.WebService;
 import jc121f1.wbs.exceptions.MiniCloudExceptionMapper;
 import jc121f1.wbs.handlers.RootHandler;
+import jc121f1.wbs.handlers.auth.AuthenticateHandler;
 import jc121f1.wbs.handlers.instance.CreateInstanceHandler;
 import jc121f1.wbs.handlers.instance.DeleteInstanceHandler;
 import jc121f1.wbs.handlers.instance.GetInstanceHandler;
@@ -46,6 +47,7 @@ public class InstanceWebService extends WebService {
         DeleteInstanceHandler deleteInstanceHandler = component.deleteInstanceHandler();
         StopInstanceHandler stopInstanceHandler = component.stopInstanceHandler();
         StartInstanceHandler startInstanceHandler = component.startInstanceHandler();
+        AuthenticateHandler authenticateHandler = component.authenticateHandler();
         //Boolean debug = component.debug();
         Boolean disableJmDNS = component.disableJmDNS();
         MiniCloudExceptionMapper exceptionMapper = component.exceptionMapper();
@@ -58,6 +60,7 @@ public class InstanceWebService extends WebService {
             config.registerPlugin(new SwaggerPlugin());
             config.registerPlugin(new ReDocPlugin());
             config.routes.exception(Exception.class, exceptionMapper::mapException);
+            config.routes.beforeMatched(authenticateHandler);
             config.events.serverStarted(() -> {
                 if (!disableJmDNS) {
                     this.startJmdns(HOSTNAME, PORT);

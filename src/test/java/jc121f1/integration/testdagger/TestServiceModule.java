@@ -3,6 +3,7 @@ package jc121f1.integration.testdagger;
 import com.github.dockerjava.api.DockerClient;
 import dagger.Module;
 import dagger.Provides;
+import jc121f1.services.auth.AuthService;
 import jc121f1.services.instance.InstanceService;
 import jc121f1.services.instance.InstanceServiceImpl;
 import jc121f1.services.instance.compute.ComputeBackend;
@@ -19,6 +20,12 @@ import java.time.ZoneOffset;
 @Module
 @VisibleForTesting
 public class TestServiceModule {
+
+    @Provides
+    @Singleton
+    AuthService authService() {
+        return Mockito.mock(AuthService.class);
+    }
 
     @Provides
     @Singleton
