@@ -1,15 +1,27 @@
 package jc121f1.e2e;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.dockerjava.api.DockerClient;
 import io.javalin.Javalin;
-import io.javalin.testtools.HttpClient;
-import io.javalin.testtools.Response;
 import jc121f1.annotations.MiniCloudTest;
+import jc121f1.dagger.auth.AuthWebServiceComponent;
+import jc121f1.dagger.auth.DaggerAuthWebServiceComponent;
 import jc121f1.dagger.instance.DaggerInstanceWebServiceComponent;
 import jc121f1.dagger.instance.InstanceWebServiceComponent;
-import jc121f1.model.instance.InstanceState;
-import jc121f1.model.instance.dao.Instance;
+import jc121f1.minicloud.client.ApiClient;
+import jc121f1.minicloud.client.ApiException;
+import jc121f1.minicloud.client.ApiResponse;
+import jc121f1.minicloud.client.api.InstanceApi;
+import jc121f1.minicloud.client.api.UserApi;
+import jc121f1.minicloud.client.model.CreateInstanceRequest;
+import jc121f1.minicloud.client.model.CreateUserRequest;
+import jc121f1.minicloud.client.model.DeleteInstanceRequest;
+import jc121f1.minicloud.client.model.GetInstanceRequest;
+import jc121f1.minicloud.client.model.Instance;
+import jc121f1.minicloud.client.model.InstanceState;
+import jc121f1.minicloud.client.model.LoginRequest;
+import jc121f1.minicloud.client.model.StartInstanceRequest;
+import jc121f1.minicloud.client.model.StopInstanceRequest;
+import jc121f1.wbs.services.AuthWebService;
 import jc121f1.wbs.services.InstanceWebService;
 import lombok.SneakyThrows;
 import org.assertj.core.api.Assertions;
@@ -27,6 +39,7 @@ import org.junit.jupiter.api.TestMethodOrder;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.UUID;
 
 @MiniCloudTest
 @TestClassOrder(ClassOrderer.OrderAnnotation.class)
@@ -37,59 +50,59 @@ class InstanceServiceEndToEndTest {
     private static final Duration ASYNC_OPERATION_POLL_INTERVAL = Duration.ofSeconds(1);
 
     private Javalin webService;
-
-    private final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private Javalin authWebService;
 
     private String instanceId;
     private Instance createdInstance;
 
-    private HttpClient client;
     private DockerClient dockerClient;
+    private InstanceApi instanceApi;
 
     @BeforeAll void beforeAll() {
         InstanceWebServiceComponent component = DaggerInstanceWebServiceComponent.create();
         dockerClient = component.dockerClient();
+
+        String bearerToken = setupAuth();
         webService = new InstanceWebService(component).create();
+        webService.start(0);
 
-        webService.start(7070);
-
-        client = new HttpClient(webService, java.net.http.HttpClient.newHttpClient());
+        ApiClient apiClient = new ApiClient();
+        apiClient.updateBaseUri("http://localhost:" + webService.port());
+        apiClient.setRequestInterceptor(request -> request.header("Authorization", "Bearer " + bearerToken));
+        instanceApi = new InstanceApi(apiClient);
     }
 
     @AfterAll void afterAll() {
-        webService.stop();
+        try {
+            if (webService != null) {
+                webService.stop();
+            }
+        } finally {
+            if (authWebService != null) {
+                authWebService.stop();
+            }
+        }
     }
 
     @TestInstance(TestInstance.Lifecycle.PER_CLASS)
     @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
     @Order(10)
     @Nested class CreateInstanceBlock {
-        Response createResponse;
+        ApiResponse<Instance> createResponse;
 
         @SneakyThrows
         @BeforeAll void setup() {
-            createResponse = client.post(
-                    "/instances",
-                    """
-                    {
-                        "name": "e2e-instance",
-                        "cpu": 2,
-                        "memory": 8
-                    }
-                    """
+            createResponse = instanceApi.createInstanceWithHttpInfo(
+                    new CreateInstanceRequest().cpu(2).memory(8).name("e2e-instance")
             );
+            createdInstance = createResponse.getData();
 
-            createdInstance = OBJECT_MAPPER.readValue(
-                    createResponse.body().string(),
-                    Instance.class
-            );
-
-            instanceId = createdInstance.id();
+            instanceId = createdInstance.getId();
         }
 
         @Order(11)
         @Test void It_should_return_200() {
-            Assertions.assertThat(createResponse.code())
+            Assertions.assertThat(createResponse.getStatusCode())
                     .isEqualTo(200);
         }
 
@@ -99,13 +112,13 @@ class InstanceServiceEndToEndTest {
             Assertions.assertThat(instanceId)
                     .startsWith("i-");
 
-            Assertions.assertThat(createdInstance.name())
+            Assertions.assertThat(createdInstance.getName())
                     .isEqualTo("e2e-instance");
 
-            Assertions.assertThat(createdInstance.cpu())
+            Assertions.assertThat(createdInstance.getCpu())
                     .isEqualTo(2);
 
-            Assertions.assertThat(createdInstance.memory())
+            Assertions.assertThat(createdInstance.getMemory())
                     .isEqualTo(8);
         }
 
@@ -120,18 +133,11 @@ class InstanceServiceEndToEndTest {
     @Order(15)
     @Nested class DuplicateInstanceBlock {
         @Test void It_should_reject_a_duplicate_name() {
-            Response duplicateResponse = client.post(
-                    "/instances",
-                    """
-                    {
-                        "name": "e2e-instance",
-                        "cpu": 2,
-                        "memory": 8
-                    }
-                    """
-            );
-
-            Assertions.assertThat(duplicateResponse.code()).isNotEqualTo(200);
+            Assertions.assertThatExceptionOfType(ApiException.class)
+                    .isThrownBy(() -> instanceApi.createInstance(
+                            new CreateInstanceRequest().cpu(2).memory(8).name("e2e-instance")))
+                    .satisfies(exception -> Assertions.assertThat(exception.getCode())
+                            .isBetween(400, 599));
         }
     }
 
@@ -139,28 +145,27 @@ class InstanceServiceEndToEndTest {
     @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
     @Order(20)
     @Nested class ListInstanceBlock {
-        Response listResponse;
+        ApiResponse<List<Instance>> listResponse;
 
+        @SneakyThrows
         @BeforeAll void setup() {
-            listResponse = client.get("/instances");
+            listResponse = instanceApi.listInstancesWithHttpInfo();
         }
 
         @Order(21)
         @Test void It_should_return_200() {
-            Assertions.assertThat(listResponse.code())
+            Assertions.assertThat(listResponse.getStatusCode())
                     .isEqualTo(200);
         }
 
         @Order(22)
         @SneakyThrows
         @Test void It_should_return_created_instance() {
-            List<Instance> instances = OBJECT_MAPPER
-                    .readerForListOf(Instance.class)
-                    .readValue(listResponse.body().string());
+            List<Instance> instances = listResponse.getData();
 
             Assertions.assertThat(instances)
                     .anyMatch(instance ->
-                            instance.id().equals(instanceId)
+                            instance.getId().equals(instanceId)
                     );
         }
 
@@ -170,31 +175,25 @@ class InstanceServiceEndToEndTest {
     @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
     @Order(30)
     @Nested class DescribeInstanceBlock {
-        Response describeResponse;
+        ApiResponse<Instance> describeResponse;
 
+        @SneakyThrows
         @BeforeAll void setup() {
-            describeResponse = client.post(
-                "/instances/describe",
-                """
-                {
-                    "instanceId": "%s"
-                }
-                """.formatted(instanceId));
+            describeResponse = instanceApi.describeInstanceWithHttpInfo(
+                    new GetInstanceRequest().instanceId(instanceId)
+            );
         }
 
         @Order(31)
         @Test void It_should_return_200() {
-            Assertions.assertThat(describeResponse.code())
+            Assertions.assertThat(describeResponse.getStatusCode())
                     .isEqualTo(200);
         }
 
         @Order(32)
         @SneakyThrows
         @Test void It_should_return_created_instance() {
-            Instance described = OBJECT_MAPPER.readValue(
-                    describeResponse.body().string(),
-                    Instance.class
-            );
+            Instance described = describeResponse.getData();
 
             assertInstanceEqualExceptState(described, createdInstance);
         }
@@ -202,39 +201,29 @@ class InstanceServiceEndToEndTest {
         @Order(33)
         @SneakyThrows
         @Test void It_should_find_the_created_instance_by_name() {
-            Response response = client.post(
-                    "/instances/describe",
-                    """
-                    {
-                        "name": "e2e-instance"
-                    }
-                    """
+            ApiResponse<Instance> response = instanceApi.describeInstanceWithHttpInfo(
+                    new GetInstanceRequest().name("e2e-instance")
             );
 
-            Assertions.assertThat(response.code()).isEqualTo(200);
-            Instance described = OBJECT_MAPPER.readValue(response.body().string(), Instance.class);
-            Assertions.assertThat(described.id()).isEqualTo(instanceId);
+            Assertions.assertThat(response.getStatusCode()).isEqualTo(200);
+            Assertions.assertThat(response.getData().getId()).isEqualTo(instanceId);
         }
 
         @Order(34)
         @Test void It_should_reject_a_request_without_an_identifier() {
-            Response response = client.post("/instances/describe", "{}");
-
-            Assertions.assertThat(response.code()).isNotEqualTo(200);
+            Assertions.assertThatExceptionOfType(ApiException.class)
+                    .isThrownBy(() -> instanceApi.describeInstance(new GetInstanceRequest()))
+                    .satisfies(exception -> Assertions.assertThat(exception.getCode())
+                            .isBetween(400, 599));
         }
 
         @Order(35)
         @Test void It_should_reject_an_unknown_identifier() {
-            Response response = client.post(
-                    "/instances/describe",
-                    """
-                    {
-                        "instanceId": "i-does-not-exist"
-                    }
-                    """
-            );
-
-            Assertions.assertThat(response.code()).isNotEqualTo(200);
+            Assertions.assertThatExceptionOfType(ApiException.class)
+                    .isThrownBy(() -> instanceApi.describeInstance(
+                            new GetInstanceRequest().instanceId("i-does-not-exist")))
+                    .satisfies(exception -> Assertions.assertThat(exception.getCode())
+                            .isBetween(400, 599));
         }
     }
 
@@ -251,32 +240,25 @@ class InstanceServiceEndToEndTest {
     @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
     @Order(50)
     @Nested class StopInstanceBlock {
-        Response stopResponse;
+        ApiResponse<Instance> stopResponse;
         Instance stoppingInstance;
 
         @SneakyThrows
         @BeforeAll void setup() {
-            stopResponse = client.post(
-                    "/instances/stop",
-                    """
-                    {
-                        "instanceId": "%s"
-                    }
-                    """.formatted(instanceId));
-            stoppingInstance = OBJECT_MAPPER.readValue(
-                    stopResponse.body().string(),
-                    Instance.class
+            stopResponse = instanceApi.stopInstanceWithHttpInfo(
+                    new StopInstanceRequest().instanceId(instanceId)
             );
+            stoppingInstance = stopResponse.getData();
         }
 
         @Order(51)
         @Test void It_should_return_200() {
-            Assertions.assertThat(stopResponse.code()).isEqualTo(200);
+            Assertions.assertThat(stopResponse.getStatusCode()).isEqualTo(200);
         }
 
         @Order(52)
         @Test void It_should_return_stopping_instance() {
-            Assertions.assertThat(stoppingInstance.state()).isEqualTo(InstanceState.STOPPING);
+            Assertions.assertThat(stoppingInstance.getState()).isEqualTo(InstanceState.STOPPING);
         }
 
         @Order(53)
@@ -290,33 +272,25 @@ class InstanceServiceEndToEndTest {
     @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
     @Order(60)
     @Nested class StartInstanceBlock {
-        Response startResponse;
+        ApiResponse<Instance> startResponse;
         Instance startingInstance;
 
         @SneakyThrows
         @BeforeAll void setup() {
-            startResponse = client.post(
-                    "/instances/start",
-                    """
-                    {
-                        "instanceId": "%s"
-                    }
-                    """.formatted(instanceId)
+            startResponse = instanceApi.startInstanceWithHttpInfo(
+                    new StartInstanceRequest().instanceId(instanceId)
             );
-            startingInstance = OBJECT_MAPPER.readValue(
-                    startResponse.body().string(),
-                    Instance.class
-            );
+            startingInstance = startResponse.getData();
         }
 
         @Order(61)
         @Test void It_should_return_200() {
-            Assertions.assertThat(startResponse.code()).isEqualTo(200);
+            Assertions.assertThat(startResponse.getStatusCode()).isEqualTo(200);
         }
 
         @Order(62)
         @Test void It_should_return_starting_instance() {
-            Assertions.assertThat(startingInstance.state()).isEqualTo(InstanceState.STARTING);
+            Assertions.assertThat(startingInstance.getState()).isEqualTo(InstanceState.STARTING);
         }
 
         @Order(63)
@@ -326,16 +300,10 @@ class InstanceServiceEndToEndTest {
 
         @Order(64)
         @Test void It_should_reject_starting_an_already_running_instance() {
-            Response response = client.post(
-                    "/instances/start",
-                    """
-                    {
-                        "instanceId": "%s"
-                    }
-                    """.formatted(instanceId)
-            );
-
-            Assertions.assertThat(response.code()).isNotEqualTo(200);
+            Assertions.assertThatExceptionOfType(ApiException.class)
+                    .isThrownBy(() -> instanceApi.startInstance(new StartInstanceRequest().instanceId(instanceId)))
+                    .satisfies(exception -> Assertions.assertThat(exception.getCode())
+                            .isBetween(400, 599));
         }
     }
 
@@ -343,22 +311,17 @@ class InstanceServiceEndToEndTest {
     @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
     @Order(70)
     @Nested class DeleteInstanceBlock {
-        Response deleteResponse;
+        ApiResponse<Instance> deleteResponse;
         @SneakyThrows
         @BeforeAll void setup() {
-            deleteResponse = client.post(
-                    "/instances/delete",
-                    """
-                    {
-                        "instanceId": "%s"
-                    }
-                    """.formatted(instanceId)
+            deleteResponse = instanceApi.deleteInstanceWithHttpInfo(
+                    new DeleteInstanceRequest().instanceId(instanceId)
             );
         }
 
         @Order(71)
         @Test void It_should_return_200() {
-            Assertions.assertThat(deleteResponse.code()).isEqualTo(200);
+            Assertions.assertThat(deleteResponse.getStatusCode()).isEqualTo(200);
         }
 
         @Order(72)
@@ -368,16 +331,10 @@ class InstanceServiceEndToEndTest {
 
         @Order(73)
         @Test void It_should_no_longer_be_describable() {
-            Response response = client.post(
-                    "/instances/describe",
-                    """
-                    {
-                        "instanceId": "%s"
-                    }
-                    """.formatted(instanceId)
-            );
-
-            Assertions.assertThat(response.code()).isNotEqualTo(200);
+            Assertions.assertThatExceptionOfType(ApiException.class)
+                    .isThrownBy(() -> instanceApi.describeInstance(new GetInstanceRequest().instanceId(instanceId)))
+                    .satisfies(exception -> Assertions.assertThat(exception.getCode())
+                            .isBetween(400, 599));
         }
 
         @Order(74)
@@ -401,22 +358,11 @@ class InstanceServiceEndToEndTest {
                 .atMost(ASYNC_OPERATION_TIMEOUT)
                 .pollInterval(ASYNC_OPERATION_POLL_INTERVAL)
                 .untilAsserted(() -> {
-                    Response response = client.post(
-                            "/instances/describe",
-                            """
-                            {
-                                "instanceId": "%s"
-                            }
-                            """.formatted(instanceId)
+                    Instance described = instanceApi.describeInstance(
+                            new GetInstanceRequest().instanceId(instanceId)
                     );
-                    String body = response.body().string();
-
-                    Assertions.assertThat(response.code())
-                            .as("describe response body: %s", body)
-                            .isEqualTo(200);
-                    Instance described = OBJECT_MAPPER.readValue(body, Instance.class);
-                    Assertions.assertThat(described.state())
-                            .as("describe response body: %s", body)
+                    Assertions.assertThat(described.getState())
+                            .as("described instance: %s", described)
                             .isEqualTo(expectedState);
                 });
     }
@@ -427,25 +373,36 @@ class InstanceServiceEndToEndTest {
                 .atMost(ASYNC_OPERATION_TIMEOUT)
                 .pollInterval(ASYNC_OPERATION_POLL_INTERVAL)
                 .untilAsserted(() -> {
-                    Response response = client.get("/instances");
-                    String body = response.body().string();
-
-                    Assertions.assertThat(response.code())
-                            .as("list response body: %s", body)
-                            .isEqualTo(200);
-                    List<Instance> remaining = OBJECT_MAPPER
-                            .readerForListOf(Instance.class)
-                            .readValue(body);
+                    List<Instance> remaining = instanceApi.listInstances();
                     Assertions.assertThat(remaining)
-                            .as("list response body: %s", body)
-                            .noneMatch(instance -> instance.id().equals(instanceId));
+                            .as("remaining instances: %s", remaining)
+                            .noneMatch(instance -> instance.getId().equals(instanceId));
                 });
     }
 
     private void assertInstanceEqualExceptState(Instance instance1, Instance instance2) {
-        Assertions.assertThat(instance1.cpu()).isEqualTo(instance2.cpu());
-        Assertions.assertThat(instance1.id()).isEqualTo(instance2.id());
-        Assertions.assertThat(instance1.name()).isEqualTo(instance2.name());
-        Assertions.assertThat(instance1.memory()).isEqualTo(instance2.memory());
+        Assertions.assertThat(instance1.getCpu()).isEqualTo(instance2.getCpu());
+        Assertions.assertThat(instance1.getId()).isEqualTo(instance2.getId());
+        Assertions.assertThat(instance1.getName()).isEqualTo(instance2.getName());
+        Assertions.assertThat(instance1.getMemory()).isEqualTo(instance2.getMemory());
+    }
+
+    @SneakyThrows
+    private String setupAuth() {
+        AuthWebServiceComponent authWebServiceComponent = DaggerAuthWebServiceComponent.create();
+        authWebService = new AuthWebService(authWebServiceComponent).create();
+        authWebService.start(0);
+
+        ApiClient apiClient = new ApiClient();
+        apiClient.updateBaseUri("http://localhost:" + authWebService.port());
+        UserApi userApi = new UserApi(apiClient);
+        String email = "instance-e2e-" + UUID.randomUUID() + "@example.com";
+        String password = UUID.randomUUID().toString();
+
+        var user = userApi.createUser(new CreateUserRequest().userEmail(email).password(password));
+        var session = userApi.login(new LoginRequest().email(email).password(password));
+        Assertions.assertThat(session.getAccountId()).isEqualTo(user.getAccountId());
+        Assertions.assertThat(session.getToken()).isNotBlank();
+        return session.getToken();
     }
 }
