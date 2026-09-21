@@ -11,10 +11,8 @@ import lombok.Builder;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbIgnore;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbImmutable;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbPartitionKey;
-import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSecondaryPartitionKey;
 
 import java.time.Instant;
-import java.util.Set;
 
 @Builder(toBuilder = true)
 @JsonDeserialize(builder = Credential.CredentialBuilder.class)
@@ -25,8 +23,6 @@ public record Credential(
         @OpenApiIgnore String secretHash,
         // hashed secret, never store or serialize plaintext — hidden from API responses
         @OpenApiRequired String accountId,
-        @OpenApiRequired Set<String> scopes,
-        // e.g. {"compute:read", "compute:write"}
         @OpenApiRequired boolean revoked,
         @OpenApiRequired
         @JsonSerialize(using = TruncatedInstantSerializer.class)
@@ -39,19 +35,6 @@ public record Credential(
 
     @JsonPOJOBuilder(withPrefix = "")
     public static class CredentialBuilder {
-
-        @DynamoDbPartitionKey
-        public Credential.CredentialBuilder credentialId(String credentialId) {
-            this.credentialId = credentialId;
-            return this;
-        }
-
-        @DynamoDbSecondaryPartitionKey(indexNames = "CredentialAccountIndex")
-        @OpenApiIgnore
-        public Credential.CredentialBuilder accountId(String accountId) {
-            this.accountId = accountId;
-            return this;
-        }
     }
 
     @DynamoDbIgnore

@@ -28,8 +28,6 @@ public record Session(
         @JsonSerialize(using = TruncatedInstantSerializer.class)
         @JsonDeserialize(using = TruncatedInstantDeserializer.class)
         Instant expiresAt
-
-
 ) {
     public enum SubjectType {
         USER,
