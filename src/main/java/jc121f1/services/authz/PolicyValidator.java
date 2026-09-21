@@ -1,13 +1,12 @@
 package jc121f1.services.authz;
 
-import jc121f1.model.authz.AuthorizationAction;
+import jc121f1.model.authz.ActionDescriptor;
 import jc121f1.model.authz.PolicyDocument;
 import jc121f1.model.authz.ResourceReference;
 import jc121f1.services.authz.exceptions.PolicyValidationException;
 
 import javax.inject.Inject;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.regex.Matcher;
@@ -24,8 +23,12 @@ public final class PolicyValidator {
             "mc:([a-z][a-z0-9-]{0,127}):([A-Za-z0-9_-]{1,128}):"
                     + "([a-z][a-z0-9-]{0,127})/([A-Za-z0-9_-]{1,128}|\\*)");
 
+    private final ActionRegistry registry;
+
     @Inject
-    public PolicyValidator() { }
+    public PolicyValidator(ActionRegistry registry) {
+        this.registry = Objects.requireNonNull(registry, "registry");
+    }
 
     /**
      * Every action pattern and resource must have at least one compatible partner.
@@ -50,7 +53,7 @@ public final class PolicyValidator {
                 require(accountId.equals(resource.accountId()), "Cross-account resource pattern");
             }
             for (String actionPattern : statement.actions()) {
-                List<AuthorizationAction> actions = expandActionPattern(actionPattern);
+                List<ActionDescriptor> actions = expandActionPattern(actionPattern);
                 require(actions.stream().anyMatch(action -> resources.stream().anyMatch(action::supports)),
                         "Action has no compatible resource");
             }
@@ -68,11 +71,9 @@ public final class PolicyValidator {
         }
     }
 
-    public List<AuthorizationAction> expandActionPattern(String value) {
-        require(value != null && value.length() <= MAX_COMPONENT_LENGTH, "Invalid action pattern");
-        List<AuthorizationAction> actions = Arrays.stream(AuthorizationAction.values())
-                .filter(action -> action.value().equals(value) || (action.service() + ":*").equals(value))
-                .toList();
+    public List<ActionDescriptor> expandActionPattern(String value) {
+        require(value != null && value.length() <= ActionRegistry.MAX_ACTION_LENGTH, "Invalid action pattern");
+        List<ActionDescriptor> actions = registry.expand(value);
         require(!actions.isEmpty(), "Unknown action or unsupported action pattern");
         return actions;
     }
@@ -89,8 +90,9 @@ public final class PolicyValidator {
     }
 
     /** Concrete evaluation targets cannot contain policy wildcards. */
-    public boolean isValidTarget(AuthorizationAction action, ResourceReference resource) {
-        return action != null && resource != null && action.supports(resource)
+    public boolean isValidTarget(ActionDescriptor action, ResourceReference resource) {
+        return action != null && registry.find(action.value()).filter(action::equals).isPresent()
+                && resource != null && action.supports(resource)
                 && validComponent(resource.accountId()) && validComponent(resource.resourceId())
                 && (!"account".equals(resource.resourceType()) || resource.accountId().equals(resource.resourceId()));
     }

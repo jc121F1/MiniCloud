@@ -17,7 +17,7 @@ import java.time.Clock;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
-@Module
+@Module(includes = AuthorizationCatalogModule.class)
 public abstract class ServiceModule {
 
     @Provides @Singleton

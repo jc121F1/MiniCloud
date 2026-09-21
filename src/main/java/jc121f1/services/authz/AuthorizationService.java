@@ -1,6 +1,7 @@
 package jc121f1.services.authz;
 
 import jc121f1.model.auth.dao.AuthenticatedSession;
+import jc121f1.model.authz.ActionDefinition;
 import jc121f1.model.authz.AuthorizationDecision;
 import jc121f1.model.authz.ResourceReference;
 import jc121f1.services.authz.exceptions.AuthorizationDeniedException;
@@ -42,4 +43,13 @@ public interface AuthorizationService {
      * @throws NullPointerException if any argument is null
      */
     void authorize(AuthenticatedSession principal, String action, ResourceReference resource);
+
+    /** Typed local entry point; transports and persisted policies use canonical strings. */
+    default AuthorizationDecision evaluate(AuthenticatedSession principal, ActionDefinition action, ResourceReference resource) {
+        return evaluate(principal, action.value(), resource);
+    }
+
+    default void authorize(AuthenticatedSession principal, ActionDefinition action, ResourceReference resource) {
+        authorize(principal, action.value(), resource);
+    }
 }

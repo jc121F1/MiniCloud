@@ -10,4 +10,7 @@ package jc121f1.model.authz;
  * proof of ownership. Policy patterns are separate from concrete references.
  */
 public record ResourceReference(String service, String accountId, String resourceType, String resourceId) {
+    public static ResourceReference of(ServiceId service, String accountId, ResourceType resourceType, String resourceId) {
+        return new ResourceReference(service.value(), accountId, resourceType.value(), resourceId);
+    }
 }
