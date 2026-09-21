@@ -11,7 +11,6 @@ import jc121f1.wbs.services.InstanceWebService;
 // click the <icon src="AllIcons.Actions.Execute"/> icon in the gutter.
 public class Main {
     static void main(String[] args) {
-        new AuthWebService(DaggerAuthWebServiceComponent.create()).start();
         InstanceWebServiceComponent component = DaggerInstanceWebServiceComponent.create();
         WebService instanceService = new InstanceWebService(component);
         WebService authService = new AuthWebService(DaggerAuthWebServiceComponent.create());
