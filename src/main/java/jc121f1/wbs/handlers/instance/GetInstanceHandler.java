@@ -12,7 +12,6 @@ import jc121f1.services.instance.InstanceService;
 import org.jetbrains.annotations.NotNull;
 
 import javax.inject.Inject;
-import java.util.List;
 
 
 public class GetInstanceHandler extends InstanceHandler {
@@ -29,7 +28,7 @@ public class GetInstanceHandler extends InstanceHandler {
             tags = {"Instance"},
             requestBody = @OpenApiRequestBody(content = {@OpenApiContent(from = GetInstanceRequest.class)}),
             responses = {
-                    @OpenApiResponse(status = "200", content = {@OpenApiContent(from = List.class)})
+                    @OpenApiResponse(status = "200", content = {@OpenApiContent(from = Instance.class)})
             }
     )
     @Override
