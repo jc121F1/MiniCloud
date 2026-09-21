@@ -1,9 +1,15 @@
 package jc121f1.service.authz;
 
-import jc121f1.model.authz.AuthorizationAction;
+import jc121f1.dagger.AuthorizationCatalogModule;
+import jc121f1.model.authz.ActionDescriptor;
 import jc121f1.model.authz.PolicyDocument;
 import jc121f1.model.authz.ResourceReference;
 import jc121f1.services.authz.PolicyValidator;
+import jc121f1.services.authz.ActionRegistry;
+import jc121f1.services.authz.AuthorizationRules;
+import jc121f1.services.auth.authorization.AuthAction;
+import jc121f1.services.authz.authorization.PolicyAction;
+import jc121f1.services.instance.authorization.InstanceAction;
 import jc121f1.services.authz.exceptions.PolicyValidationException;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -13,7 +19,8 @@ import java.util.Collections;
 import java.util.List;
 
 class PolicyValidatorTest {
-    private final PolicyValidator validator = new PolicyValidator();
+    private final ActionRegistry registry = AuthorizationCatalogModule.actionRegistry();
+    private final PolicyValidator validator = new PolicyValidator(registry);
 
     @Test
     void accepts_exact_actions_service_wildcards_and_explicit_denies() {
@@ -33,9 +40,9 @@ class PolicyValidatorTest {
                     policy(action, "mc:instance:a-1:instance/*")))
                     .as(action).isInstanceOf(PolicyValidationException.class);
         }
-        Assertions.assertThat(AuthorizationAction.find("instance:Start"))
-                .contains(AuthorizationAction.START_INSTANCE);
-        Assertions.assertThat(AuthorizationAction.find("instance:*")).isEmpty();
+        Assertions.assertThat(registry.find("instance:Start"))
+                .contains(ActionDescriptor.from(InstanceAction.START));
+        Assertions.assertThat(registry.find("instance:*")).isEmpty();
     }
 
     @Test
@@ -67,16 +74,16 @@ class PolicyValidatorTest {
 
     @Test
     void concrete_targets_cannot_use_wildcards_or_forge_account_resource_ids() {
-        Assertions.assertThat(validator.isValidTarget(AuthorizationAction.START_INSTANCE,
+        Assertions.assertThat(validator.isValidTarget(ActionDescriptor.from(InstanceAction.START),
                 new ResourceReference("instance", "a-1", "instance", "i-1"))).isTrue();
         for (ResourceReference resource : List.of(
                 new ResourceReference("instance", "*", "instance", "i-1"),
                 new ResourceReference("instance", "a-1", "instance", "*"),
                 new ResourceReference("instance", "a-1", "instance", "i/1"),
                 new ResourceReference("auth", "a-1", "instance", "i-1"))) {
-            Assertions.assertThat(validator.isValidTarget(AuthorizationAction.START_INSTANCE, resource)).isFalse();
+            Assertions.assertThat(validator.isValidTarget(ActionDescriptor.from(InstanceAction.START), resource)).isFalse();
         }
-        Assertions.assertThat(validator.isValidTarget(AuthorizationAction.CREATE_INSTANCE,
+        Assertions.assertThat(validator.isValidTarget(ActionDescriptor.from(InstanceAction.CREATE),
                 new ResourceReference("instance", "a-1", "account", "a-2"))).isFalse();
         Assertions.assertThat(validator.isValidTarget(null, null)).isFalse();
     }
@@ -128,14 +135,15 @@ class PolicyValidatorTest {
 
     @Test
     void registry_protects_management_and_credential_creation() {
-        for (AuthorizationAction action : AuthorizationAction.values()) {
-            if (action.service().equals("authz") || action == AuthorizationAction.TRANSFER_OWNERSHIP) {
-                Assertions.assertThat(action.ownerOnly()).isTrue();
-                Assertions.assertThat(action.credentialAllowed()).isFalse();
-            }
+        AuthorizationRules rules = new AuthorizationRules();
+        for (PolicyAction action : PolicyAction.values()) {
+            Assertions.assertThat(rules.ownerOnly(ActionDescriptor.from(action))).isTrue();
+            Assertions.assertThat(rules.credentialAllowed(ActionDescriptor.from(action))).isFalse();
         }
-        Assertions.assertThat(AuthorizationAction.GENERATE_CREDENTIAL.credentialAllowed()).isFalse();
-        Assertions.assertThat(AuthorizationAction.START_INSTANCE.credentialAllowed()).isTrue();
+        Assertions.assertThat(rules.ownerOnly(ActionDescriptor.from(AuthAction.TRANSFER_OWNERSHIP))).isTrue();
+        Assertions.assertThat(rules.credentialAllowed(ActionDescriptor.from(AuthAction.TRANSFER_OWNERSHIP))).isFalse();
+        Assertions.assertThat(rules.credentialAllowed(ActionDescriptor.from(AuthAction.GENERATE_CREDENTIAL))).isFalse();
+        Assertions.assertThat(rules.credentialAllowed(ActionDescriptor.from(InstanceAction.START))).isTrue();
     }
 
     private static PolicyDocument policy(String action, String resource) {
