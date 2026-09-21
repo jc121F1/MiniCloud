@@ -22,31 +22,20 @@ import java.time.Instant;
 @DynamoDbImmutable(builder = User.UserBuilder.class)
 public record User (
     @DynamoDbPartitionKey @OpenApiRequired String userId,
+    @DynamoDbSecondaryPartitionKey(indexNames = "UserEmailIndex")
     @OpenApiRequired String email,
-    @OpenApiIgnore String passwordHash,
+    @JsonIgnore @OpenApiIgnore String passwordHash,
     @OpenApiRequired String accountId,
     @JsonIgnore
     @OpenApiRequired
     @EqualsAndHashCode.Exclude
     @JsonSerialize(using = TruncatedInstantSerializer.class)
     @JsonDeserialize(using = TruncatedInstantDeserializer.class)
-    Instant createdAt) {
+    Instant createdAt
+) {
 
     @JsonPOJOBuilder(withPrefix = "")
     public static class UserBuilder {
-
-        @DynamoDbPartitionKey
-        public User.UserBuilder userId(String id) {
-            this.userId = id;
-            return this;
-        }
-
-        @DynamoDbSecondaryPartitionKey(indexNames = "UserEmailIndex")
-        @OpenApiIgnore
-        public User.UserBuilder email(String email) {
-            this.email = email;
-            return this;
-        }
     }
 
     @DynamoDbIgnore

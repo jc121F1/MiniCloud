@@ -3,6 +3,7 @@ package jc121f1.services.auth.store.nosql;
 import com.google.common.annotations.VisibleForTesting;
 import jc121f1.common.store.nosql.DynamoDbStore;
 import jc121f1.common.store.nosql.DynamoDbStoreDefinition;
+import jc121f1.common.store.nosql.GlobalSecondaryIndexDefinition;
 import jc121f1.common.store.nosql.UniqueConstraint;
 import jc121f1.model.auth.dao.User;
 import jc121f1.services.auth.store.UserStore;
@@ -10,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbAsyncTable;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
+import software.amazon.awssdk.services.dynamodb.model.ProjectionType;
 
 import javax.inject.Inject;
 import java.util.List;
@@ -18,7 +20,7 @@ import java.util.concurrent.CompletableFuture;
 @Slf4j
 public final class DynamoDbUserStore extends DynamoDbStore<User> implements UserStore {
 
-    private static final String TABLE_NAME = "MiniCloudIdentityStore";
+    private static final String TABLE_NAME = "MiniCloudUserStore";
     private static final String USER_EMAIL_INDEX = "UserEmailIndex";
 
     @Inject
@@ -41,7 +43,7 @@ public final class DynamoDbUserStore extends DynamoDbStore<User> implements User
                 TableSchema.fromImmutableClass(User.class),
                 User::userId,
                 List.of(new UniqueConstraint<>("email", User::email)),
-                List.of()
+                List.of(new GlobalSecondaryIndexDefinition(USER_EMAIL_INDEX, ProjectionType.ALL))
         );
     }
 
