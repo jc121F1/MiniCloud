@@ -80,6 +80,7 @@ public class AuthServiceTest {
 
         private Credential credential() {
             return Credential.builder().credentialId("cre-existing").accountId(ACCOUNT_ID)
+                    .createdByUserId("u-existing")
                     .secretHash(PASSWORD_HASH).createdAt(NOW).revoked(false).build();
         }
 
@@ -370,6 +371,7 @@ public class AuthServiceTest {
                 ArgumentCaptor<Credential> stored = ArgumentCaptor.forClass(Credential.class);
                 Mockito.verify(credentialStore).create(stored.capture());
                 Credential persisted = stored.getValue();
+                Assertions.assertThat(persisted.createdByUserId()).isEqualTo(user().userId());
                 Assertions.assertThat(result.credentialId()).startsWith("cre-").isEqualTo(persisted.credentialId());
                 Assertions.assertThat(result.accountId()).isEqualTo(ACCOUNT_ID).isEqualTo(persisted.accountId());
                 Assertions.assertThat(Base64.getUrlDecoder().decode(result.secret())).hasSize(32).containsOnly((byte) 42);

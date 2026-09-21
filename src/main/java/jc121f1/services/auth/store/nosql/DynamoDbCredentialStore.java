@@ -12,6 +12,8 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
 
 import javax.inject.Inject;
 import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 
 @Slf4j
 public final class DynamoDbCredentialStore extends DynamoDbStore<Credential> implements CredentialStore {
@@ -30,6 +32,17 @@ public final class DynamoDbCredentialStore extends DynamoDbStore<Credential> imp
             final DynamoDbAsyncTable<Credential> table
     ) {
         super(dynamoDbAsyncClient, table, createDefinition());
+    }
+
+    @Override
+    public CompletableFuture<Credential> update(Credential previous, Credential updated) {
+        Objects.requireNonNull(previous, "previous");
+        Objects.requireNonNull(updated, "updated");
+        if (!Objects.equals(previous.createdByUserId(), updated.createdByUserId())
+                || !Objects.equals(previous.accountId(), updated.accountId())) {
+            throw new IllegalArgumentException("Credential creator and account cannot be changed during update");
+        }
+        return super.update(previous, updated);
     }
 
     private static DynamoDbStoreDefinition<Credential> createDefinition() {

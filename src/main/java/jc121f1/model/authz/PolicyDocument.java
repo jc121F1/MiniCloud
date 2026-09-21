@@ -1,0 +1,29 @@
+package jc121f1.model.authz;
+
+import java.util.List;
+import java.util.Objects;
+
+/**
+ * Policy content. PolicyService validates version, size limits, registered actions,
+ * resource compatibility, pattern syntax, and account scope before persistence.
+ * V1 supports version 1 and the matching rules in docs/authz-design.md.
+ */
+public record PolicyDocument(int version, List<Statement> statements) {
+    public PolicyDocument {
+        statements = List.copyOf(statements);
+    }
+
+    /** Action and resource lists are alternatives; both must match the request. */
+    public record Statement(Effect effect, List<String> actions, List<String> resources) {
+        public Statement {
+            Objects.requireNonNull(effect, "effect");
+            actions = List.copyOf(actions);
+            resources = List.copyOf(resources);
+        }
+    }
+
+    public enum Effect {
+        ALLOW,
+        DENY
+    }
+}

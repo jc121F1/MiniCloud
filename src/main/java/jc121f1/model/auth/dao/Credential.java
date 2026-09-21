@@ -23,6 +23,8 @@ public record Credential(
         @OpenApiIgnore String secretHash,
         // hashed secret, never store or serialize plaintext — hidden from API responses
         @OpenApiRequired String accountId,
+        // Set from the authenticated user at creation; never reassigned by lifecycle updates.
+        @OpenApiIgnore String createdByUserId,
         @OpenApiRequired boolean revoked,
         @OpenApiRequired
         @JsonSerialize(using = TruncatedInstantSerializer.class)

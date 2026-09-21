@@ -227,6 +227,7 @@ public class AuthServiceImpl implements AuthService {
                 .credentialId(credentialId)
                 .secretHash(secretHash)
                 .accountId(user.accountId())
+                .createdByUserId(user.userId())
                 .revoked(false)
                 .createdAt(clock.instant())
                 .lastUsedAt(null)
