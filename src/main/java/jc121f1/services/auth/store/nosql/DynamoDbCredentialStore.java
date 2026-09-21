@@ -7,6 +7,7 @@ import jc121f1.model.auth.dao.Credential;
 import jc121f1.services.auth.store.CredentialStore;
 import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbAsyncTable;
+import software.amazon.awssdk.enhanced.dynamodb.Expression;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
 
@@ -35,14 +36,14 @@ public final class DynamoDbCredentialStore extends DynamoDbStore<Credential> imp
     }
 
     @Override
-    public CompletableFuture<Credential> update(Credential previous, Credential updated) {
+    public CompletableFuture<Credential> update(Credential previous, Credential updated, Expression condition) {
         Objects.requireNonNull(previous, "previous");
         Objects.requireNonNull(updated, "updated");
         if (!Objects.equals(previous.createdByUserId(), updated.createdByUserId())
                 || !Objects.equals(previous.accountId(), updated.accountId())) {
             throw new IllegalArgumentException("Credential creator and account cannot be changed during update");
         }
-        return super.update(previous, updated);
+        return super.update(previous, updated, condition);
     }
 
     private static DynamoDbStoreDefinition<Credential> createDefinition() {

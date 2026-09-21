@@ -39,6 +39,9 @@ public record DynamoDbStoreDefinition<T>(
         }
 
         uniqueConstraints = List.copyOf(uniqueConstraints);
+        if (tableSchema.tableMetadata().primarySortKey().isPresent() && !uniqueConstraints.isEmpty()) {
+            throw new IllegalArgumentException("Unique locks currently require a partition-only primary key");
+        }
 
     }
 
