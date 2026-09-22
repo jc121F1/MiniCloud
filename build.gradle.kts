@@ -54,7 +54,7 @@ dependencies {
     implementation(platform("software.amazon.awssdk:bom:2.54.+"))
     implementation("software.amazon.awssdk:dynamodb")
     implementation("software.amazon.awssdk:dynamodb-enhanced")
-    implementation("org.bouncycastle:bcpkix-jdk18on:1.85")
+    implementation("org.bouncycastle:bcpkix-jdk18on:1.86")
     implementation(platform("io.netty:netty-bom:4.2.18.Final"))
     runtimeOnly("ch.qos.logback:logback-classic:1.6.3")
 
