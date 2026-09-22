@@ -67,11 +67,6 @@ class InstanceApiIntegrationTest {
                     }
                     throw new UnauthorizedException("Invalid credentials");
                 });
-        Mockito.when(component.authorizationService().evaluate(Mockito.any(),
-                        Mockito.any(InstanceAction.class), Mockito.any()))
-                .thenReturn(new AuthorizationDecision(AuthorizationDecision.Outcome.ALLOW,
-                        AuthorizationDecision.Reason.POLICY_ALLOW, List.of()));
-
         computeBackend = component.computeBackend();
         authorizationService = component.authorizationService();
 
@@ -104,21 +99,9 @@ class InstanceApiIntegrationTest {
     @Nested
     @Order(0)
     class CreateInstance {
-
-        @BeforeEach void setup() {
-            Mockito.when(computeBackend.create(ArgumentMatchers.any(Instance.class)))
-                    .thenReturn(CompletableFuture.completedFuture(null));
-
-            Mockito.when(computeBackend.start(ArgumentMatchers.any(Instance.class)))
-                    .thenReturn(CompletableFuture.completedFuture(null));
-
-            Mockito.when(instanceStore.create(ArgumentMatchers.any(Instance.class)))
-                    .thenAnswer(invocation ->
-                            CompletableFuture.completedFuture(invocation.getArgument(0, Instance.class)));
-        }
-
         @Test
         void createsInstance() {
+            stubCreate();
             JavalinTest.test(app, (server, client) -> {
 
                 var response = send("POST",
@@ -185,6 +168,7 @@ class InstanceApiIntegrationTest {
 
         @Test
         void clientCannotAssignAnotherAccountAsOwner() {
+            stubCreate();
             JavalinTest.test(app, (server, client) -> {
                 var response = send("POST", "/instances", """
                         {"name":"new-instance","cpu":2,"memory":1024,"accountId":"a-spoofed"}
@@ -211,6 +195,14 @@ class InstanceApiIntegrationTest {
 
     @Nested
     class ListInstances {
+
+        @BeforeEach
+        void allowDescribe() {
+            Mockito.when(authorizationService.evaluate(Mockito.any(),
+                            Mockito.any(InstanceAction.class), Mockito.any()))
+                    .thenReturn(new AuthorizationDecision(AuthorizationDecision.Outcome.ALLOW,
+                            AuthorizationDecision.Reason.POLICY_ALLOW, List.of()));
+        }
 
         @Test
         void listsInstances() {
@@ -241,6 +233,16 @@ class InstanceApiIntegrationTest {
                         .isEqualTo(1024);
             });
         }
+    }
+
+    private void stubCreate() {
+        Mockito.when(computeBackend.create(ArgumentMatchers.any(Instance.class)))
+                .thenReturn(CompletableFuture.completedFuture(null));
+        Mockito.when(computeBackend.start(ArgumentMatchers.any(Instance.class)))
+                .thenReturn(CompletableFuture.completedFuture(null));
+        Mockito.when(instanceStore.create(ArgumentMatchers.any(Instance.class)))
+                .thenAnswer(invocation ->
+                        CompletableFuture.completedFuture(invocation.getArgument(0, Instance.class)));
     }
 
     private HttpResponse<String> send(String method, String path, String body) throws Exception {
