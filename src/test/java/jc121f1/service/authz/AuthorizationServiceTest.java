@@ -201,6 +201,25 @@ class AuthorizationServiceTest {
     }
 
     @Test
+    void mismatched_credentials_are_denied_before_creator_or_policy_reads() {
+        for (Credential invalid : List.of(credential(USER.subjectId()).toBuilder().accountId("a-other").build(),
+                credential(USER.subjectId()).toBuilder().credentialId("cre-other").build())) {
+            Mockito.when(credentials.get(SERVICE.subjectId(), true)).thenReturn(found(invalid));
+            assertDecision(start(SERVICE), Outcome.DENY, Reason.INVALID_PRINCIPAL);
+        }
+        Mockito.verifyNoInteractions(users, policies);
+    }
+
+    @Test
+    void credential_identity_checks_precede_operation_restrictions_and_policy_reads() {
+        Mockito.when(credentials.get(SERVICE.subjectId(), true)).thenReturn(found(credential(null)));
+        assertDecision(service.evaluate(SERVICE, "authz:DeletePolicy", POLICY), Outcome.DENY, Reason.CREDENTIAL_CREATOR_MISSING);
+        Mockito.when(credentials.get(SERVICE.subjectId(), true)).thenReturn(found(credential(USER.subjectId())));
+        assertDecision(service.evaluate(SERVICE, "authz:DeletePolicy", POLICY), Outcome.DENY, Reason.CREDENTIAL_OPERATION_FORBIDDEN);
+        Mockito.verifyNoInteractions(policies);
+    }
+
+    @Test
     void decisions_recheck_completed_changes_with_consistent_identity_reads() {
         attach(USER, allow());
         assertDecision(start(USER), Outcome.ALLOW, Reason.POLICY_ALLOW);

@@ -3,6 +3,7 @@ package jc121f1.services.authz;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import jc121f1.model.auth.dao.Account;
 import jc121f1.model.auth.dao.AuthenticatedSession;
+import jc121f1.model.auth.dao.Credential;
 import jc121f1.model.auth.dao.Session;
 import jc121f1.model.auth.dao.User;
 import jc121f1.model.authz.ActionDescriptor;
@@ -63,8 +64,7 @@ public final class AuthorizationServiceImpl implements AuthorizationService {
         Objects.requireNonNull(principal, "principal");
         Objects.requireNonNull(actionName, "action");
         Objects.requireNonNull(resource, "resource");
-        if (!PolicyValidator.isValidIdentifier(principal.accountId())
-                || !PolicyValidator.isValidIdentifier(principal.subjectId()) || principal.subjectType() == null) {
+        if (!isValidPrincipal(principal)) {
             return deny(Reason.INVALID_PRINCIPAL);
         }
         ActionDescriptor action = registry.find(actionName).orElse(null);
@@ -84,26 +84,33 @@ public final class AuthorizationServiceImpl implements AuthorizationService {
         if (!principal.accountId().equals(account.accountId())) {
             return deny(Reason.INVALID_PRINCIPAL);
         }
-        if (principal.subjectType() == Session.SubjectType.USER) {
-            User user = read(() -> users.get(principal.subjectId(), true)).orElse(null);
-            if (!matches(user, principal.subjectId(), account.accountId())) {
-                return deny(Reason.INVALID_PRINCIPAL);
-            }
-            if (rules.deletesOwner(action, resource, account.ownerId())) {
-                return deny(Reason.ACCOUNT_OWNER_PROTECTED);
-            }
-            boolean owner = user.userId().equals(account.ownerId());
-            if (rules.ownerOnly(action)) {
-                return owner ? decision(Outcome.ALLOW, Reason.OWNER_RECOVERY_ALLOW, List.of()) : deny(Reason.OWNER_REQUIRED);
-            }
-            return evaluatePolicies(reference(principal), action, resource, owner);
-        }
-        if (principal.subjectType() != Session.SubjectType.CREDENTIAL) {
+        return switch (principal.subjectType()) {
+            case USER -> evaluateUser(principal, account, action, resource);
+            case CREDENTIAL -> evaluateCredential(principal, account, action, resource);
+            default -> deny(Reason.INVALID_PRINCIPAL);
+        };
+    }
+
+    private AuthorizationDecision evaluateUser(AuthenticatedSession principal, Account account,
+                                               ActionDescriptor action, ResourceReference resource) {
+        User user = read(() -> users.get(principal.subjectId(), true)).orElse(null);
+        if (!matches(user, principal.subjectId(), account.accountId())) {
             return deny(Reason.INVALID_PRINCIPAL);
         }
+        if (rules.deletesOwner(action, resource, account.ownerId())) {
+            return deny(Reason.ACCOUNT_OWNER_PROTECTED);
+        }
+        boolean owner = user.userId().equals(account.ownerId());
+        if (rules.ownerOnly(action)) {
+            return owner ? decision(Outcome.ALLOW, Reason.OWNER_RECOVERY_ALLOW, List.of()) : deny(Reason.OWNER_REQUIRED);
+        }
+        return evaluatePolicies(reference(principal), action, resource, owner);
+    }
+
+    private AuthorizationDecision evaluateCredential(AuthenticatedSession principal, Account account,
+                                                     ActionDescriptor action, ResourceReference resource) {
         var credential = read(() -> credentials.get(principal.subjectId(), true)).orElse(null);
-        if (credential == null || !credential.isUsable() || !principal.subjectId().equals(credential.credentialId())
-                || !account.accountId().equals(credential.accountId())) {
+        if (!isUsableCredential(credential, principal)) {
             return deny(Reason.INVALID_PRINCIPAL);
         }
         if (!PolicyValidator.isValidIdentifier(credential.createdByUserId())) {
@@ -119,6 +126,11 @@ public final class AuthorizationServiceImpl implements AuthorizationService {
         if (rules.deletesOwner(action, resource, account.ownerId())) {
             return deny(Reason.ACCOUNT_OWNER_PROTECTED);
         }
+        return evaluateCredentialPolicies(principal, creator, account, action, resource);
+    }
+
+    private AuthorizationDecision evaluateCredentialPolicies(AuthenticatedSession principal, User creator, Account account,
+                                                             ActionDescriptor action, ResourceReference resource) {
         AuthorizationDecision own = evaluatePolicies(reference(principal), action, resource, false);
         if (own.outcome() == Outcome.DENY) {
             return own;
@@ -189,6 +201,19 @@ public final class AuthorizationServiceImpl implements AuthorizationService {
 
     private static boolean matches(User user, String userId, String accountId) {
         return user != null && userId.equals(user.userId()) && accountId.equals(user.accountId());
+    }
+
+    private static boolean isValidPrincipal(AuthenticatedSession principal) {
+        return PolicyValidator.isValidIdentifier(principal.accountId())
+                && PolicyValidator.isValidIdentifier(principal.subjectId())
+                && principal.subjectType() != null;
+    }
+
+    private static boolean isUsableCredential(Credential credential, AuthenticatedSession principal) {
+        return credential != null
+                && credential.isUsable()
+                && principal.subjectId().equals(credential.credentialId())
+                && principal.accountId().equals(credential.accountId());
     }
 
     private static PrincipalReference reference(AuthenticatedSession principal) {
