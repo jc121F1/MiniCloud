@@ -1,9 +1,21 @@
 package jc121f1.service.authz.store;
 
+import jc121f1.dagger.AuthorizationCatalogModule;
+import jc121f1.model.auth.dao.Account;
+import jc121f1.model.auth.dao.AuthenticatedSession;
 import jc121f1.model.auth.dao.Session;
+import jc121f1.model.auth.dao.User;
+import jc121f1.model.authz.AuthorizationDecision;
 import jc121f1.model.authz.Policy;
 import jc121f1.model.authz.PolicyDocument;
 import jc121f1.model.authz.PrincipalReference;
+import jc121f1.model.authz.ResourceReference;
+import jc121f1.services.auth.store.AccountStore;
+import jc121f1.services.auth.store.CredentialStore;
+import jc121f1.services.auth.store.UserStore;
+import jc121f1.services.authz.AuthorizationRules;
+import jc121f1.services.authz.AuthorizationServiceImpl;
+import jc121f1.services.authz.PolicyValidator;
 import jc121f1.services.authz.exceptions.PolicyConflictException;
 import jc121f1.services.authz.exceptions.PolicyNotFoundException;
 import jc121f1.services.authz.store.nosql.DynamoDbPolicyStore;
@@ -14,6 +26,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.mockito.Mockito;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
@@ -22,6 +35,7 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
 import java.net.URI;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -175,6 +189,33 @@ class DynamoDbPolicyStoreLocalTest {
                 store.delete(account, policyId, 1).join();
             }
         }
+    }
+
+    @Test
+    void evaluator_observes_completed_policy_updates_and_detachments() {
+        AccountStore accounts = Mockito.mock(AccountStore.class);
+        UserStore users = Mockito.mock(UserStore.class);
+        CredentialStore credentials = Mockito.mock(CredentialStore.class);
+        Mockito.when(accounts.get(account, true)).thenReturn(CompletableFuture.completedFuture(Optional.of(
+                Account.builder().accountId(account).ownerId("u-owner").status(Account.AccountStatus.ACTIVE).build())));
+        Mockito.when(users.get(user.subjectId(), true)).thenReturn(CompletableFuture.completedFuture(Optional.of(
+                User.builder().userId(user.subjectId()).accountId(account).build())));
+        var registry = AuthorizationCatalogModule.actionRegistry();
+        var evaluator = new AuthorizationServiceImpl(accounts, users, credentials, store, registry,
+                new PolicyValidator(registry), new AuthorizationRules());
+        var principal = new AuthenticatedSession(account, user.subjectId(), Session.SubjectType.USER);
+        var target = new ResourceReference("instance", account, "instance", "i-1");
+        create("p-evaluate");
+        store.attach(account, "p-evaluate", 1, user).join();
+        Assertions.assertThat(evaluator.evaluate(principal, "instance:Start", target).outcome())
+                .isEqualTo(AuthorizationDecision.Outcome.ALLOW);
+        store.update(account, "p-evaluate", 1, new PolicyDocument(1, List.of(new PolicyDocument.Statement(
+                PolicyDocument.Effect.DENY, List.of("instance:Start"), List.of("mc:instance:" + account + ":instance/*"))))).join();
+        Assertions.assertThat(evaluator.evaluate(principal, "instance:Start", target).reason())
+                .isEqualTo(AuthorizationDecision.Reason.EXPLICIT_DENY);
+        store.detach(account, "p-evaluate", user).join();
+        Assertions.assertThat(evaluator.evaluate(principal, "instance:Start", target).reason())
+                .isEqualTo(AuthorizationDecision.Reason.NO_MATCHING_ALLOW);
     }
 
     private Policy create(String policyId) {

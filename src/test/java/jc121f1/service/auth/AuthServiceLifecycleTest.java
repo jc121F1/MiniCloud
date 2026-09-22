@@ -174,6 +174,11 @@ class AuthServiceLifecycleTest {
         }
 
         @Override
+        public CompletableFuture<Optional<T>> get(String id, boolean consistentRead) {
+            return get(id);
+        }
+
+        @Override
         public CompletableFuture<List<T>> list() {
             return CompletableFuture.completedFuture(List.copyOf(items.values()));
         }

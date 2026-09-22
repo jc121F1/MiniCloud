@@ -119,6 +119,7 @@ public abstract class DynamoDbStore<T> implements GenericStore<T> {
         return get(id, false);
     }
 
+    @Override
     public CompletableFuture<Optional<T>> get(String id, boolean consistentRead) {
         Objects.requireNonNull(
                 id,

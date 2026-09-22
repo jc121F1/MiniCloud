@@ -48,6 +48,8 @@ Action patterns permit an exact action or `service:*`. Resource patterns permit 
 
 The Java contract is defined in `services.authz.AuthorizationService`: the principal is the existing `AuthenticatedSession` and the target is a `ResourceReference`. Local callers pass a service-owned `ActionDefinition`; its canonical string identifies the action for transport and persistence. `evaluate` returns `AuthorizationDecision`; `authorize` returns normally only on allow and throws `AuthorizationDeniedException` on denial. Storage failures propagate separately.
 
+`AuthorizationServiceImpl` uses the existing identity-store interfaces and `PolicyStore`, with no DynamoDB or HTTP dependencies. It rejects malformed requests and cross-account targets before reads, then requests strongly consistent account/user/credential reads via `GenericStore.get(id, true)`. Every evaluation loads current policies; stored documents are revalidated and corrupt/incompatible policy data fails as a storage error. Decisions include deduplicated, sorted matched policy IDs/revisions from the credential and creator where applicable. The evaluator also rejects deletion of the current account owner. Existing auth and instance routes do not yet invoke this evaluator.
+
 Evaluate in this order:
 
 1. Resolve current principal/account state. Deny deleted users, revoked credentials, inactive accounts, malformed references, and cross-account requests.
@@ -108,8 +110,8 @@ After decomposition, authenticate both the calling service and the end-user iden
 ## Implementation checkpoints
 
 1. Contracts, service-owned action catalogs, policy validator, management errors, and credential creator metadata: user confirmed the checks passed, including the catalog refactor. Creator/account reassignment is rejected by normal credential-store updates, including attempts to assign an inferred creator to legacy credentials. Legacy credentials remain readable; the forthcoming evaluator must deny credentials without a creator.
-2. Policy persistence using the extended common store: implemented with common-layer regression tests and Authz DynamoDB Local transaction/concurrency tests; awaiting user-run verification of the refactor. Local tests require DynamoDB at localhost:8000 and `DynamoDbLocalAvailable=True`; Authz tests create and remove a uniquely named test table.
-3. Authorization evaluator and enforcement tests: pending.
+2. Policy persistence using the extended common store: user confirmed the refactor's tests passed. Local tests require DynamoDB at localhost:8000 and `DynamoDbLocalAvailable=True`; Authz tests create and remove a uniquely named test table.
+3. Authorization evaluator and enforcement: implemented with permission-matrix tests and a DynamoDB Local policy-change visibility test; awaiting user-run verification. Strong identity reads reuse the common store. Endpoint integration and audit emission remain later work.
 4. Policy-management implementation and concurrency tests: pending.
 5. Management API, audit records, and integration tests: pending.
 
