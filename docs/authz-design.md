@@ -1,6 +1,6 @@
 # Authorization design
 
-Status: proposed. Implement and verify Authz before integrating instance operations.
+Status: Authz implementation checkpoints 1–5 verified by user-run checks. Instance integration is the next separate milestone.
 
 ## Scope and existing foundation
 
@@ -134,10 +134,10 @@ After decomposition, authenticate both the calling service and the end-user iden
 
 ## Implementation checkpoints
 
-1. Contracts, service-owned action catalogs, policy validator, management errors, and credential creator metadata: user confirmed the checks passed, including the catalog refactor. Creator/account reassignment is rejected by normal credential-store updates, including attempts to assign an inferred creator to legacy credentials. Legacy credentials remain readable; the forthcoming evaluator must deny credentials without a creator.
+1. Contracts, service-owned action catalogs, policy validator, management errors, and credential creator metadata: user confirmed the checks passed, including the catalog refactor. Creator/account reassignment is rejected by normal credential-store updates, including attempts to assign an inferred creator to legacy credentials. Legacy credentials remain readable; the evaluator denies credentials without a creator.
 2. Policy persistence using the extended common store: user confirmed the refactor's tests passed. Local tests require DynamoDB at localhost:8000 and `DynamoDbLocalAvailable=True`; Authz tests create and remove a uniquely named test table.
 3. Authorization evaluator and enforcement: user confirmed tests passed, including the refactor separating user and credential evaluation. Strong identity reads reuse the common store. Instance integration remains later work.
 4. Policy-management implementation and concurrency tests: user confirmed checks passed. Unit tests cover owner enforcement on all eight operations, target validation, cleanup, immutable results, and error propagation. DynamoDB Local tests exercise the management lifecycle, evaluator visibility, and concurrent revision updates through the service.
-5. Management API, audit records, and integration tests: user confirmed the audit subcheckpoint passed. The management HTTP API is implemented and awaiting user-run verification, including all eight endpoints, owner enforcement, authentication-before-parsing, account isolation, request limits, status mapping, and audit outcomes. Instance integration remains a separate milestone after verification.
+5. Management API, audit records, and integration tests: user confirmed both the audit and management API checkpoints passed, including all eight endpoints, owner enforcement, authentication-before-parsing, account isolation, request limits, status mapping, and audit outcomes. Verification includes the user's local SpotBugs suppression adjustments. Instance integration remains a separate milestone.
 
 Each checkpoint is committed before pausing for the user to run tests. Do not proceed past a checkpoint until its results are reviewed.
