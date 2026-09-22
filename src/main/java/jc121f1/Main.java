@@ -2,6 +2,8 @@ package jc121f1;
 
 import jc121f1.dagger.auth.DaggerAuthWebServiceComponent;
 import jc121f1.wbs.services.AuthWebService;
+import jc121f1.dagger.authz.DaggerAuthzWebServiceComponent;
+import jc121f1.wbs.services.AuthzWebService;
 import jc121f1.dagger.instance.DaggerInstanceWebServiceComponent;
 import jc121f1.dagger.instance.InstanceWebServiceComponent;
 import jc121f1.wbs.WebService;
@@ -14,7 +16,9 @@ public class Main {
         InstanceWebServiceComponent component = DaggerInstanceWebServiceComponent.create();
         WebService instanceService = new InstanceWebService(component);
         WebService authService = new AuthWebService(DaggerAuthWebServiceComponent.create());
+        WebService authzService = new AuthzWebService(DaggerAuthzWebServiceComponent.create());
         instanceService.start();
         authService.start();
+        authzService.start();
     }
 }

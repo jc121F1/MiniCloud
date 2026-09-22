@@ -77,7 +77,7 @@ V1 validation limits are 32 statements, 32 action entries and 32 resource entrie
 
 Use conditional revisions for updates and atomic attachment changes. Reject deletion of an attached policy. Authorization reads must observe completed policy updates/detachments; do not cache grants in sessions or rely on eventually consistent indexes for enforcement. Storage failures fail closed and surface as service errors. Requests already authorized may complete; revocation is not cancellation of in-flight work.
 
-`PolicyServiceImpl` enforces owner authorization on every operation through the evaluator, scopes policy storage to the caller's account, validates documents, and checks attachment targets with strongly consistent identity reads. Attaching credentials requires usable credentials and an existing same-account creator; listing their attachments remains available after revocation. Detach skips target existence checks so owners can clean up deleted identities. Identity validation and policy mutation are not a cross-store transaction: deletion/revocation during attachment can leave a dormant attachment, but the evaluator's fresh identity checks prevent it from granting access. Deployment wrappers record audit events; HTTP exposure remains pending.
+`PolicyServiceImpl` enforces owner authorization on every operation through the evaluator, scopes policy storage to the caller's account, validates documents, and checks attachment targets with strongly consistent identity reads. Attaching credentials requires usable credentials and an existing same-account creator; listing their attachments remains available after revocation. Detach skips target existence checks so owners can clean up deleted identities. Identity validation and policy mutation are not a cross-store transaction: deletion/revocation during attachment can leave a dormant attachment, but the evaluator's fresh identity checks prevent it from granting access. Deployment wrappers record audit events; the HTTP adapter calls those wrappers.
 
 `PolicyStore` is a trusted persistence interface behind policy management. `DynamoDbPolicyStore` uses the dedicated `MiniCloudAuthorizationStore` table with `pk`/`sk` keys. Policy rows use account partitions; attachment rows use account plus principal type/ID partitions. Base-table queries and point reads are strongly consistent and queries follow all pages.
 
@@ -103,6 +103,25 @@ Audit delivery currently uses JSON payloads on the `jc121f1.audit.authorization`
 
 Completion requires tests for default deny, allow/deny precedence, exact/wildcard matching, cross-account isolation, owner recovery and transfer, credential permission intersection, creator deletion, policy replacement/detachment, concurrent management changes, and storage failures. Test management operations through their API and verify denied mutations leave storage unchanged. Instance integration starts only after this contract and its tests are complete.
 
+## Management HTTP API
+
+`Main` starts `AuthzWebService` on port 7072 alongside Auth (7071) and Instance (7070). It has its own Dagger component and reuses the existing authentication handler. All matched routes require authentication, including documentation; there is no public policy-management route. Send `Authorization: Bearer <session-token>` and `Content-Type: application/json`. This is a separate HTTP boundary in the existing process, not completed microservice extraction: identity reads and token authentication still use local Auth stores.
+
+| Method | Path | JSON request | Success |
+| --- | --- | --- | --- |
+| POST | `/policies/create` | `document` | 201, policy with server-generated ID and revision 1 |
+| POST | `/policies/describe` | `policyId` | 200, policy |
+| GET | `/policies` | No body | 200, policy array |
+| POST | `/policies/update` | `policyId`, `expectedRevision`, `document` | 200, replacement policy with new revision |
+| POST | `/policies/delete` | `policyId`, `expectedRevision` | 204 |
+| POST | `/policies/attach` | `policyId`, `expectedRevision`, `principal` | 204 |
+| POST | `/policies/detach` | `policyId`, `principal` | 204 |
+| POST | `/policies/attachments/list` | `principal` | 200, policy array |
+
+`principal` is an attachment target such as `{"accountId":"a-123","subjectId":"u-456","subjectType":"USER"}`; `CREDENTIAL` is the other supported type. Caller identity always comes from authentication. Requests cannot supply policy ownership or the acting principal. Unknown fields, duplicate keys, trailing JSON, numeric enums, and fractional revisions are rejected. Body parsing is bounded to 64 KiB of bytes, including chunked requests; document limits remain stricter after parsing.
+
+Errors distinguish invalid authentication (401), permission denial (403), invalid JSON/document/input (400), missing policy/target (404), revision or attachment conflicts (409), oversized bodies (413), and storage/internal failures (500). Denials do not disclose internal decision reasons, and parser/storage exception text is not returned. Required request fields are checked at the HTTP boundary; service validation remains authoritative for policy semantics. HTTP integration tests run real authorization, management, and audit layers against mocked persistence; the separate DynamoDB Local suite verifies storage transactions and concurrency.
+
 ## Future service decomposition
 
 Services own their action catalogs and resource ownership data. Auth owns identities; Authz owns policies and decisions. Shared contracts can move into a small independently versioned API artifact, with service action enums in each service's contract artifact. Authz's evaluator and validator must not import compute implementations or service-owned instance enums.
@@ -119,6 +138,6 @@ After decomposition, authenticate both the calling service and the end-user iden
 2. Policy persistence using the extended common store: user confirmed the refactor's tests passed. Local tests require DynamoDB at localhost:8000 and `DynamoDbLocalAvailable=True`; Authz tests create and remove a uniquely named test table.
 3. Authorization evaluator and enforcement: user confirmed tests passed, including the refactor separating user and credential evaluation. Strong identity reads reuse the common store. Instance integration remains later work.
 4. Policy-management implementation and concurrency tests: user confirmed checks passed. Unit tests cover owner enforcement on all eight operations, target validation, cleanup, immutable results, and error propagation. DynamoDB Local tests exercise the management lifecycle, evaluator visibility, and concurrent revision updates through the service.
-5. Management API, audit records, and integration tests: audit subcheckpoint implemented, awaiting user-run verification. Tests cover decision/completion separation, all management operations, denied mutations, revision evidence, storage and audit sink failures, metadata exclusion, and production DI bindings. Management HTTP API and its integration tests are next, after this checkpoint passes.
+5. Management API, audit records, and integration tests: user confirmed the audit subcheckpoint passed. The management HTTP API is implemented and awaiting user-run verification, including all eight endpoints, owner enforcement, authentication-before-parsing, account isolation, request limits, status mapping, and audit outcomes. Instance integration remains a separate milestone after verification.
 
 Each checkpoint is committed before pausing for the user to run tests. Do not proceed past a checkpoint until its results are reviewed.
