@@ -1,6 +1,5 @@
 package jc121f1.services.authz.audit;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import jc121f1.model.auth.dao.AuthenticatedSession;
 import jc121f1.model.authz.AuthorizationDecision;
 import jc121f1.model.authz.AuthorizationDecision.PolicyReference;
@@ -27,7 +26,6 @@ public final class AuthorizationAudit {
     private final AuthorizationAuditSink sink;
 
     @Inject
-    @SuppressFBWarnings(value = "EI_EXPOSE_REP2", justification = "Injected clock and audit sink are intentionally shared.")
     public AuthorizationAudit(Clock clock, AuthorizationAuditSink sink) {
         this.clock = clock;
         this.sink = sink;

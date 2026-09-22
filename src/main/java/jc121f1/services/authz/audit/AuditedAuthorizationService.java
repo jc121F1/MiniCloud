@@ -1,6 +1,5 @@
 package jc121f1.services.authz.audit;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import jc121f1.model.auth.dao.AuthenticatedSession;
 import jc121f1.model.authz.AuthorizationDecision;
 import jc121f1.model.authz.ResourceReference;
@@ -16,7 +15,6 @@ public final class AuditedAuthorizationService implements AuthorizationService {
     private final AuthorizationAudit audit;
 
     @Inject
-    @SuppressFBWarnings(value = "EI_EXPOSE_REP2", justification = "Injected evaluator and audit recorder are intentionally shared.")
     public AuditedAuthorizationService(AuthorizationServiceImpl delegate, AuthorizationAudit audit) {
         this.delegate = delegate;
         this.audit = audit;

@@ -1,5 +1,6 @@
 package jc121f1.wbs.handlers.authz;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.javalin.http.Context;
 import io.javalin.openapi.HttpMethod;
 import io.javalin.openapi.OpenApi;
@@ -19,6 +20,10 @@ public final class PolicyHandlers {
     private final PolicyService service;
 
     @Inject
+    @SuppressFBWarnings(
+            value = "EI_EXPOSE_REP2",
+            justification = "policy service is injected dependency and is intentionally shared."
+    )
     public PolicyHandlers(PolicyService service) {
         this.service = service;
     }
