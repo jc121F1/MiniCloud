@@ -24,7 +24,8 @@ import java.util.List;
  * PolicyNotFoundException, stale revisions or attached deletions use
  * PolicyConflictException, and persistence failures use AuthorizationStoreException.
  *
- * <p>Mutations are atomic and audited. A completed mutation must be visible to
+ * <p>Mutations are atomic. Deployment audit wrappers record outcomes on a best-effort
+ * basis; audit delivery is not part of the storage transaction. A completed mutation must be visible to
  * subsequent authorization evaluations. No operation creates an identity.
  */
 public interface PolicyService {
