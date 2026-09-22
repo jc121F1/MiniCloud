@@ -48,7 +48,7 @@ Action patterns permit an exact action or `service:*`. Resource patterns permit 
 
 The Java contract is defined in `services.authz.AuthorizationService`: the principal is the existing `AuthenticatedSession` and the target is a `ResourceReference`. Local callers pass a service-owned `ActionDefinition`; its canonical string identifies the action for transport and persistence. `evaluate` returns `AuthorizationDecision`; `authorize` returns normally only on allow and throws `AuthorizationDeniedException` on denial. Storage failures propagate separately.
 
-`AuthorizationServiceImpl` uses the existing identity-store interfaces and `PolicyStore`, with no DynamoDB or HTTP dependencies. It rejects malformed requests and cross-account targets before reads, then requests strongly consistent account/user/credential reads via `GenericStore.get(id, true)`. Every evaluation loads current policies; stored documents are revalidated and corrupt/incompatible policy data fails as a storage error. Decisions include deduplicated, sorted matched policy IDs/revisions from the credential and creator where applicable. The evaluator also rejects deletion of the current account owner. Existing auth and instance routes do not yet invoke this evaluator.
+`AuthorizationServiceImpl` uses the existing identity-store interfaces and `PolicyStore`, with no DynamoDB or HTTP dependencies. It rejects malformed requests and cross-account targets before reads, then requests strongly consistent account/user/credential reads via `GenericStore.get(id, true)`. Every evaluation loads current policies; stored documents are revalidated and corrupt/incompatible policy data fails as a storage error. Decisions include deduplicated, sorted matched policy IDs/revisions from the credential and creator where applicable. The evaluator also rejects deletion of the current account owner. Instance routes now enforce through this evaluator; auth routes remain a later integration.
 
 Evaluate in this order:
 
@@ -124,11 +124,11 @@ Errors distinguish invalid authentication (401), permission denial (403), invali
 
 ## Instance integration decisions
 
-Instances carry a persisted `accountId` assigned from the authenticated caller when created. The field is excluded from client JSON and must never be read from a request when determining ownership. State transitions retain it. Existing rows without an account ID need explicit migration before they can be authorized; they must not inherit an account from a caller-supplied value or a default.
+Instances carry a persisted `accountId` assigned from the authenticated caller when created. The field is excluded from client JSON and must never be read from a request when determining ownership. A submitted `accountId` on create is ignored. State transitions retain persisted ownership. Existing rows without an account ID need explicit migration before they can be authorized; they must not inherit an account from a caller-supplied value or a default.
 
 The list operation requires `instance:List` on the caller's account resource. Its result includes only persisted instances owned by that account for which the caller also has `instance:Describe` on the concrete instance resource. A denied describe decision excludes that row; a storage failure aborts the list instead of returning a partial success. Thus an account-scoped list grant alone does not reveal instances covered by a per-instance deny or lacking a describe grant.
 
-Integration checkpoint 1 adds the persisted, client-hidden ownership field and tests its storage mapping and JSON behavior. This checkpoint is awaiting user-run verification; service enforcement and HTTP wiring are subsequent checkpoints.
+Integration checkpoint 1 added the persisted, client-hidden ownership field and tests its storage mapping and JSON behavior. The user confirmed its targeted test and Checkstyle/SpotBugs checks passed. Integration checkpoint 2 passes the authenticated session into every instance service call, enforces all six actions inside the service, and applies the list rule above. HTTP handlers use `AuthContext` after authentication; missing/invalid authentication remains 401 and authorization denial maps to 403. This checkpoint awaits user-run verification.
 
 ## Future service decomposition
 

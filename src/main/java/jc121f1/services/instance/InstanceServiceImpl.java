@@ -1,6 +1,12 @@
 package jc121f1.services.instance;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import jc121f1.model.auth.dao.AuthenticatedSession;
+import jc121f1.model.authz.AuthorizationDecision;
+import jc121f1.model.authz.ResourceReference;
+import jc121f1.services.authz.AuthorizationService;
+import jc121f1.services.instance.authorization.InstanceAction;
+import jc121f1.services.instance.authorization.InstanceResourceType;
 import jc121f1.model.instance.InstanceState;
 import jc121f1.model.instance.api.request.CreateInstanceRequest;
 import jc121f1.model.instance.api.request.DeleteInstanceRequest;
@@ -24,6 +30,7 @@ import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
@@ -40,14 +47,16 @@ public class InstanceServiceImpl implements InstanceService {
     private final EventBus eventBus;
 
     private final InstanceStore instanceStore;
+    private final AuthorizationService authorizationService;
 
     @Inject
     public InstanceServiceImpl(Clock clock, ComputeBackend computeBackend, EventBus eventBus,
-                               InstanceStore instanceStore) {
+                               InstanceStore instanceStore, AuthorizationService authorizationService) {
         this.clock = clock;
         this.computeBackend = computeBackend;
         this.eventBus = eventBus;
         this.instanceStore = instanceStore;
+        this.authorizationService = authorizationService;
 
         this.registerHealthEvents();
         reconcileExistingInstances().exceptionally(error -> {
@@ -61,17 +70,22 @@ public class InstanceServiceImpl implements InstanceService {
     }
 
     @Override
-    public Instance get(GetInstanceRequest request) {
+    public Instance get(AuthenticatedSession caller, GetInstanceRequest request) {
+        Objects.requireNonNull(caller, "caller");
 
         if (!request.hasIdentifier()) {
             throw new ValidationException(
                     "GetInstanceRequest must contain one of [\"name\" or \"instanceId\"]");
         } else if (request.hasInstanceId()) {
-            return instanceStore.get(request.instanceId()).join()
+            Instance instance = instanceStore.get(request.instanceId()).join()
                     .orElseThrow(() -> new ResourceNotFoundException("Instance not found " + request.instanceId()));
+            authorize(caller, InstanceAction.DESCRIBE, instance);
+            return instance;
         } else {
-            return instanceStore.getByName(request.name()).join()
+            Instance instance = instanceStore.getByName(request.name()).join()
                     .orElseThrow(() -> new ResourceNotFoundException("Instance not found " + request.name()));
+            authorize(caller, InstanceAction.DESCRIBE, instance);
+            return instance;
         }
     }
 
@@ -89,7 +103,9 @@ public class InstanceServiceImpl implements InstanceService {
     }
 
     @Override
-    public Instance create(CreateInstanceRequest request) {
+    public Instance create(AuthenticatedSession caller, CreateInstanceRequest request) {
+        Objects.requireNonNull(caller, "caller");
+        authorizationService.authorize(caller, InstanceAction.CREATE, accountResource(caller.accountId()));
         String instanceId;
         Instance createdInstance;
 
@@ -99,6 +115,7 @@ public class InstanceServiceImpl implements InstanceService {
                 .name(request.name())
                 .memory(request.memory())
                 .id(instanceId)
+                .accountId(caller.accountId())
                 .state(InstanceState.STARTING)
                 .createdAt(clock.instant())
                 .build();
@@ -117,8 +134,14 @@ public class InstanceServiceImpl implements InstanceService {
     }
 
     @Override
-    public List<Instance> list(ListInstanceRequest request) {
-        return instanceStore.list().join();
+    public List<Instance> list(AuthenticatedSession caller, ListInstanceRequest request) {
+        Objects.requireNonNull(caller, "caller");
+        authorizationService.authorize(caller, InstanceAction.LIST, accountResource(caller.accountId()));
+        return instanceStore.list().join().stream()
+                .filter(instance -> caller.accountId().equals(instance.accountId()))
+                .filter(instance -> authorizationService.evaluate(caller, InstanceAction.DESCRIBE,
+                        instanceResource(instance)).outcome() == AuthorizationDecision.Outcome.ALLOW)
+                .toList();
     }
 
     private List<Instance> list() {
@@ -126,7 +149,8 @@ public class InstanceServiceImpl implements InstanceService {
     }
 
     @Override
-    public Instance delete(DeleteInstanceRequest request) {
+    public Instance delete(AuthenticatedSession caller, DeleteInstanceRequest request) {
+        Objects.requireNonNull(caller, "caller");
         Instance remove;
         String identifier;
 
@@ -139,6 +163,7 @@ public class InstanceServiceImpl implements InstanceService {
             identifier = request.name();
         }
         remove = get(identifier);
+        authorize(caller, InstanceAction.DELETE, remove);
 
         computeBackend.delete(remove)
                 .thenCompose(_ -> instanceStore.delete(remove));
@@ -148,7 +173,8 @@ public class InstanceServiceImpl implements InstanceService {
     }
 
     @Override
-    public Instance stop(StopInstanceRequest request) {
+    public Instance stop(AuthenticatedSession caller, StopInstanceRequest request) {
+        Objects.requireNonNull(caller, "caller");
         Instance stop;
         String identifier;
 
@@ -161,6 +187,7 @@ public class InstanceServiceImpl implements InstanceService {
             identifier = request.name();
         }
         stop = get(identifier);
+        authorize(caller, InstanceAction.STOP, stop);
 
         if (stop.state().isStoppable()) {
             stop = setInstanceState(stop, InstanceState.STOPPING);
@@ -175,7 +202,8 @@ public class InstanceServiceImpl implements InstanceService {
     }
 
     @Override
-    public Instance start(StartInstanceRequest request) {
+    public Instance start(AuthenticatedSession caller, StartInstanceRequest request) {
+        Objects.requireNonNull(caller, "caller");
         Instance start;
         String identifier;
 
@@ -188,6 +216,7 @@ public class InstanceServiceImpl implements InstanceService {
             identifier = request.name();
         }
         start = get(identifier);
+        authorize(caller, InstanceAction.START, start);
         if (start.state().isStartable()) {
             start = setInstanceState(start, InstanceState.STARTING);
         } else {
@@ -207,6 +236,20 @@ public class InstanceServiceImpl implements InstanceService {
                     setInstanceState(instance, InstanceState.MISSING);
                     return null;
                 });
+    }
+
+    private void authorize(AuthenticatedSession caller, InstanceAction action, Instance instance) {
+        authorizationService.authorize(caller, action, instanceResource(instance));
+    }
+
+    private ResourceReference instanceResource(Instance instance) {
+        return ResourceReference.of(InstanceAction.DESCRIBE.service(), instance.accountId(),
+                InstanceResourceType.INSTANCE, instance.id());
+    }
+
+    private ResourceReference accountResource(String accountId) {
+        return ResourceReference.of(InstanceAction.CREATE.service(), accountId,
+                InstanceResourceType.ACCOUNT, accountId);
     }
 
     private CompletableFuture<Void> createInstance(Instance instance) {

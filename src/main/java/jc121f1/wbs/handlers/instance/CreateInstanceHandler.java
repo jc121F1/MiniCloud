@@ -7,6 +7,7 @@ import io.javalin.openapi.OpenApiContent;
 import io.javalin.openapi.OpenApiRequestBody;
 import io.javalin.openapi.OpenApiResponse;
 import jc121f1.model.instance.api.request.CreateInstanceRequest;
+import jc121f1.model.auth.AuthContext;
 import jc121f1.model.instance.dao.Instance;
 import jc121f1.services.instance.InstanceService;
 import org.jetbrains.annotations.NotNull;
@@ -35,7 +36,7 @@ public class CreateInstanceHandler extends InstanceHandler {
     public void handle(@NotNull Context ctx) {
         CreateInstanceRequest request = ctx.bodyAsClass(CreateInstanceRequest.class);
 
-        Instance instance = instanceService.create(request);
+        Instance instance = instanceService.create(AuthContext.require(ctx), request);
 
         ctx.json(instance);
     }
