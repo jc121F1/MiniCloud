@@ -1,6 +1,6 @@
 # Authorization design
 
-Status: Authz foundation checkpoints 1–5 and instance integration checkpoints 1–2 were verified by user-run checks. The instance integration implementation and expanded tests are complete, with the latest edits unverified at the user's request.
+Status: Authz foundation checkpoints 1–5 and instance integration checkpoints 1–2 were verified by user-run tests and checks. The user confirmed the final instance integration tests pass. Checkstyle and SpotBugs have not been reported for the final test-only edits.
 
 ## Scope and existing foundation
 
@@ -130,7 +130,7 @@ Public create, list, describe, start, stop, and delete calls enforce their corre
 
 The list operation requires `instance:List` on the caller's account resource. Its result includes only persisted instances owned by that account for which the caller also has `instance:Describe` on the concrete instance resource. A denied describe decision excludes that row; a storage failure aborts the list instead of returning a partial success. Thus an account-scoped list grant alone does not reveal instances covered by a per-instance deny or lacking a describe grant.
 
-Integration checkpoint 1 added the persisted, client-hidden ownership field and tests its storage mapping and JSON behavior. The user confirmed its targeted test and Checkstyle/SpotBugs checks passed. Integration checkpoint 2 passes the authenticated session into every instance service call, enforces all six actions inside the service, and applies the list rule above. HTTP handlers use `AuthContext` after authentication; missing/invalid authentication remains 401 and authorization denial maps to 403. The user confirmed its tests and checks passed after the HTTP test fixture correction. Integration checkpoint 3 exercises the real audited evaluator through the instance service and HTTP boundary, including current policy changes, credential intersection, owner behavior, account isolation, list filtering, and storage errors. An initial run passed four of five tests; the remaining test exposed a test fixture restubbing error, which was corrected. Further integration tests were added afterward. No tests or Gradle checks have run on these latest edits, as requested.
+Integration checkpoint 1 added the persisted, client-hidden ownership field and tests its storage mapping and JSON behavior. The user confirmed its targeted test and Checkstyle/SpotBugs checks passed. Integration checkpoint 2 passes the authenticated session into every instance service call, enforces all six actions inside the service, and applies the list rule above. HTTP handlers use `AuthContext` after authentication; missing/invalid authentication remains 401 and authorization denial maps to 403. The user confirmed its tests and checks passed after the HTTP test fixture correction. Integration checkpoint 3 exercises the real audited evaluator through the instance service and HTTP boundary, including current policy changes, credential intersection, owner behavior, account isolation, list filtering, and storage errors. An initial run exposed a test fixture restubbing error; it was corrected and the HTTP coverage expanded. The user confirmed the final tests pass. Final Checkstyle and SpotBugs results have not been reported.
 
 ## Future service decomposition
 
