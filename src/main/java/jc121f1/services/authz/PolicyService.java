@@ -66,6 +66,6 @@ public interface PolicyService {
      */
     void detachPolicy(AuthenticatedSession caller, String policyId, PrincipalReference principal);
 
-    /** Returns immutable current policy snapshots attached to an existing principal. */
+    /** Returns immutable current policy snapshots for an existing principal, including a revoked credential. */
     List<Policy> listAttachedPolicies(AuthenticatedSession caller, PrincipalReference principal);
 }
