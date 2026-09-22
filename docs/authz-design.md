@@ -122,6 +122,14 @@ Completion requires tests for default deny, allow/deny precedence, exact/wildcar
 
 Errors distinguish invalid authentication (401), permission denial (403), invalid JSON/document/input (400), missing policy/target (404), revision or attachment conflicts (409), oversized bodies (413), and storage/internal failures (500). Denials do not disclose internal decision reasons, and parser/storage exception text is not returned. Required request fields are checked at the HTTP boundary; service validation remains authoritative for policy semantics. HTTP integration tests run real authorization, management, and audit layers against mocked persistence; the separate DynamoDB Local suite verifies storage transactions and concurrency.
 
+## Instance integration decisions
+
+Instances carry a persisted `accountId` assigned from the authenticated caller when created. The field is excluded from client JSON and must never be read from a request when determining ownership. State transitions retain it. Existing rows without an account ID need explicit migration before they can be authorized; they must not inherit an account from a caller-supplied value or a default.
+
+The list operation requires `instance:List` on the caller's account resource. Its result includes only persisted instances owned by that account for which the caller also has `instance:Describe` on the concrete instance resource. A denied describe decision excludes that row; a storage failure aborts the list instead of returning a partial success. Thus an account-scoped list grant alone does not reveal instances covered by a per-instance deny or lacking a describe grant.
+
+Integration checkpoint 1 adds the persisted, client-hidden ownership field and tests its storage mapping and JSON behavior. This checkpoint is awaiting user-run verification; service enforcement and HTTP wiring are subsequent checkpoints.
+
 ## Future service decomposition
 
 Services own their action catalogs and resource ownership data. Auth owns identities; Authz owns policies and decisions. Shared contracts can move into a small independently versioned API artifact, with service action enums in each service's contract artifact. Authz's evaluator and validator must not import compute implementations or service-owned instance enums.
