@@ -156,6 +156,76 @@ class InstanceAuthzIntegrationTest {
     }
 
     @Test
+    void memberWithoutGrantsCannotReadOrMutateInstances() throws Exception {
+        for (String path : List.of("/instances/describe", "/instances/start",
+                "/instances/stop", "/instances/delete")) {
+            Assertions.assertThat(send("POST", path, idBody(FIRST), "member-token").statusCode())
+                    .as(path).isEqualTo(403);
+        }
+        Assertions.assertThat(send("POST", "/instances", createBody(ACCOUNT), "member-token").statusCode())
+                .isEqualTo(403);
+        Assertions.assertThat(send("GET", "/instances", "", "member-token").statusCode())
+                .isEqualTo(403);
+        Mockito.verify(instances, Mockito.never()).create(Mockito.any());
+        Mockito.verify(instances, Mockito.never()).update(Mockito.any(), Mockito.any());
+        Mockito.verify(instances, Mockito.never()).delete(Mockito.any());
+        Mockito.verifyNoInteractions(backend);
+    }
+
+    @Test
+    void ownerCanUseEveryInstanceOperation() throws Exception {
+        var listed = send("GET", "/instances", "", "owner-token");
+        Assertions.assertThat(listed.statusCode()).isEqualTo(200);
+        Assertions.assertThat(listed.body()).contains(FIRST.id(), SECOND.id()).doesNotContain(FOREIGN.id());
+        Assertions.assertThat(send("POST", "/instances/describe", idBody(FIRST), "owner-token").statusCode())
+                .isEqualTo(200);
+        Assertions.assertThat(send("POST", "/instances/start", idBody(FIRST), "owner-token").statusCode())
+                .isEqualTo(200);
+        Instance running = FIRST.toBuilder().state(InstanceState.RUNNING).build();
+        Mockito.when(instances.get(FIRST.id())).thenReturn(found(running));
+        Assertions.assertThat(send("POST", "/instances/stop", idBody(FIRST), "owner-token").statusCode())
+                .isEqualTo(200);
+        Assertions.assertThat(send("POST", "/instances/delete", idBody(FIRST), "owner-token").statusCode())
+                .isEqualTo(200);
+        Mockito.verify(backend).stop(Mockito.any());
+        Mockito.verify(backend).delete(Mockito.any());
+        Mockito.verify(instances).delete(Mockito.any());
+    }
+
+    @Test
+    void foreignAndUnownedRowsCannotBeAccessedByIdOrName() throws Exception {
+        Mockito.when(instances.getByName(FOREIGN.name())).thenReturn(found(FOREIGN));
+        for (String path : List.of("/instances/describe", "/instances/start",
+                "/instances/stop", "/instances/delete")) {
+            Assertions.assertThat(send("POST", path, idBody(FOREIGN), "owner-token").statusCode())
+                    .as(path).isEqualTo(403);
+        }
+        Assertions.assertThat(send("POST", "/instances/describe",
+                "{\"name\":\"" + FOREIGN.name() + "\"}", "owner-token").statusCode()).isEqualTo(403);
+        Instance legacy = instance("i-legacy", "legacy", null);
+        Mockito.when(instances.get(legacy.id())).thenReturn(found(legacy));
+        Assertions.assertThat(send("POST", "/instances/describe", idBody(legacy), "owner-token").statusCode())
+                .isEqualTo(403);
+        Mockito.when(instances.list()).thenReturn(CompletableFuture.completedFuture(List.of(FIRST, legacy)));
+        Assertions.assertThat(send("GET", "/instances", "", "owner-token").body())
+                .contains(FIRST.id()).doesNotContain(legacy.id());
+        Mockito.verify(instances, Mockito.never()).update(Mockito.any(), Mockito.any());
+        Mockito.verify(instances, Mockito.never()).delete(Mockito.any());
+        Mockito.verifyNoInteractions(backend);
+    }
+
+    @Test
+    void explicitDescribeDenyAlsoRemovesInstanceFromOwnerList() throws Exception {
+        attach("u-owner", Session.SubjectType.USER, policy("p-owner-deny", PolicyDocument.Effect.DENY,
+                "instance:Describe", resource(FIRST)));
+        Assertions.assertThat(send("POST", "/instances/describe", idBody(FIRST), "owner-token").statusCode())
+                .isEqualTo(403);
+        var listed = send("GET", "/instances", "", "owner-token");
+        Assertions.assertThat(listed.statusCode()).isEqualTo(200);
+        Assertions.assertThat(listed.body()).contains(SECOND.id()).doesNotContain(FIRST.id(), FOREIGN.id());
+    }
+
+    @Test
     void policyChangesAffectServiceCallsWithoutRestart() throws Exception {
         Assertions.assertThatThrownBy(() -> service.start(MEMBER,
                 StartInstanceRequest.builder().instanceId(FIRST.id()).build()))
@@ -194,6 +264,11 @@ class InstanceAuthzIntegrationTest {
                 "instance:Start", resource(FIRST)));
         Assertions.assertThat(send("POST", "/instances/start", idBody(FIRST), "credential-token").statusCode())
                 .isEqualTo(200);
+        Mockito.when(users.get("u-member", true)).thenReturn(CompletableFuture.completedFuture(Optional.empty()));
+        Assertions.assertThat(send("POST", "/instances/start", idBody(FIRST), "credential-token").statusCode())
+                .isEqualTo(403);
+        Mockito.when(users.get("u-member", true)).thenReturn(found(User.builder()
+                .userId("u-member").accountId(ACCOUNT).build()));
         attach("u-member", Session.SubjectType.USER, policy("p-creator-deny", PolicyDocument.Effect.DENY,
                 "instance:Start", resource(FIRST)));
         Assertions.assertThat(send("POST", "/instances/start", idBody(FIRST), "credential-token").statusCode())
@@ -220,13 +295,24 @@ class InstanceAuthzIntegrationTest {
 
     @Test
     void policyStorageFailureAbortsBeforeBackendWork() throws Exception {
-        Mockito.when(policies.listAttached(Mockito.any())).thenReturn(CompletableFuture.failedFuture(
-                new AuthorizationStoreException("private storage failure", null)));
+        Mockito.doReturn(CompletableFuture.failedFuture(
+                new AuthorizationStoreException("private storage failure", null)))
+                .when(policies).listAttached(Mockito.any());
         var response = send("POST", "/instances/start", idBody(FIRST), "member-token");
         Assertions.assertThat(response.statusCode()).isEqualTo(500);
         Assertions.assertThat(response.body()).doesNotContain("private storage failure");
         Mockito.verify(backend, Mockito.never()).start(Mockito.any());
         Assertions.assertThat(auditEvents.getLast().outcome()).isEqualTo(AuthorizationAuditEvent.Outcome.ERROR);
+    }
+
+    @Test
+    void instanceStorageFailureDoesNotBecomePermissionDenial() throws Exception {
+        Mockito.when(instances.get(FIRST.id())).thenReturn(CompletableFuture.failedFuture(
+                new IllegalStateException("private instance storage failure")));
+        var response = send("POST", "/instances/describe", idBody(FIRST), "owner-token");
+        Assertions.assertThat(response.statusCode()).isEqualTo(500);
+        Assertions.assertThat(response.body()).doesNotContain("private instance storage failure");
+        Mockito.verifyNoInteractions(backend);
     }
 
     private static AuthenticatedSession caller(AuthenticateRequest request) {

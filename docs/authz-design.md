@@ -1,12 +1,12 @@
 # Authorization design
 
-Status: Authz implementation checkpoints 1–5 verified by user-run checks. Instance integration is the next separate milestone.
+Status: Authz foundation checkpoints 1–5 and instance integration checkpoints 1–2 were verified by user-run checks. The instance integration implementation and expanded tests are complete, with the latest edits unverified at the user's request.
 
 ## Scope and existing foundation
 
 Authn establishes identity; Authz decides whether that identity may perform an action on a resource. MiniCloud already has accounts with an `ownerId`, users, credentials, and `AuthenticatedSession(accountId, subjectId, subjectType)`. Current account checks live in `AuthAuthorizationHandler`; they are not a general permission system.
 
-V1 delivers policy storage, management operations, a framework-independent evaluator, and authorization tests. Instance integration is a later milestone. Roles, groups, cross-account delegation, resource-based policies, and conditional expressions are deferred.
+V1 delivers policy storage, management operations, a framework-independent evaluator, authorization tests, and instance-service enforcement. Roles, groups, cross-account delegation, resource-based policies, and conditional expressions are deferred.
 
 ## Model
 
@@ -101,7 +101,7 @@ Audit policy mutations and decisions using principal, account, action, resource,
 
 Audit delivery currently uses JSON payloads on the `jc121f1.audit.authorization` application logger. This is best-effort operational auditing, not a durable transactional audit ledger: collection/retention belongs to deployment, and a crash or sink failure can lose an event. A sink failure emits a fixed error message without changing authorization decisions, masking storage errors, or reporting an already committed mutation as failed. Guaranteed durable delivery would require a storage-backed outbox and is not implemented here.
 
-Completion requires tests for default deny, allow/deny precedence, exact/wildcard matching, cross-account isolation, owner recovery and transfer, credential permission intersection, creator deletion, policy replacement/detachment, concurrent management changes, and storage failures. Test management operations through their API and verify denied mutations leave storage unchanged. Instance integration starts only after this contract and its tests are complete.
+Completion requires tests for default deny, allow/deny precedence, exact/wildcard matching, cross-account isolation, owner recovery and transfer, credential permission intersection, creator deletion, policy replacement/detachment, concurrent management changes, and storage failures. Management operations are tested through their API and denied mutations leave storage unchanged. Instance integration followed this contract and its verified tests.
 
 ## Management HTTP API
 
@@ -126,9 +126,11 @@ Errors distinguish invalid authentication (401), permission denial (403), invali
 
 Instances carry a persisted `accountId` assigned from the authenticated caller when created. The field is excluded from client JSON and must never be read from a request when determining ownership. A submitted `accountId` on create is ignored. State transitions retain persisted ownership. Existing rows without an account ID need explicit migration before they can be authorized; they must not inherit an account from a caller-supplied value or a default.
 
+Public create, list, describe, start, stop, and delete calls enforce their corresponding `InstanceAction` inside `InstanceService`. Create's initial backend start is part of the create operation. Startup reconciliation and health events are internal maintenance work on stored instances, without an end-user request. The instance service calls the DI-provided audited `AuthorizationService` interface; the evaluator still depends only on action descriptors and resource references.
+
 The list operation requires `instance:List` on the caller's account resource. Its result includes only persisted instances owned by that account for which the caller also has `instance:Describe` on the concrete instance resource. A denied describe decision excludes that row; a storage failure aborts the list instead of returning a partial success. Thus an account-scoped list grant alone does not reveal instances covered by a per-instance deny or lacking a describe grant.
 
-Integration checkpoint 1 added the persisted, client-hidden ownership field and tests its storage mapping and JSON behavior. The user confirmed its targeted test and Checkstyle/SpotBugs checks passed. Integration checkpoint 2 passes the authenticated session into every instance service call, enforces all six actions inside the service, and applies the list rule above. HTTP handlers use `AuthContext` after authentication; missing/invalid authentication remains 401 and authorization denial maps to 403. The user confirmed its tests and checks passed after the HTTP test fixture correction. Integration checkpoint 3 exercises the real audited evaluator through the instance service and HTTP boundary, including current policy changes, credential intersection, and list filtering; it awaits user-run verification.
+Integration checkpoint 1 added the persisted, client-hidden ownership field and tests its storage mapping and JSON behavior. The user confirmed its targeted test and Checkstyle/SpotBugs checks passed. Integration checkpoint 2 passes the authenticated session into every instance service call, enforces all six actions inside the service, and applies the list rule above. HTTP handlers use `AuthContext` after authentication; missing/invalid authentication remains 401 and authorization denial maps to 403. The user confirmed its tests and checks passed after the HTTP test fixture correction. Integration checkpoint 3 exercises the real audited evaluator through the instance service and HTTP boundary, including current policy changes, credential intersection, owner behavior, account isolation, list filtering, and storage errors. An initial run passed four of five tests; the remaining test exposed a test fixture restubbing error, which was corrected. Further integration tests were added afterward. No tests or Gradle checks have run on these latest edits, as requested.
 
 ## Future service decomposition
 
@@ -144,8 +146,8 @@ After decomposition, authenticate both the calling service and the end-user iden
 
 1. Contracts, service-owned action catalogs, policy validator, management errors, and credential creator metadata: user confirmed the checks passed, including the catalog refactor. Creator/account reassignment is rejected by normal credential-store updates, including attempts to assign an inferred creator to legacy credentials. Legacy credentials remain readable; the evaluator denies credentials without a creator.
 2. Policy persistence using the extended common store: user confirmed the refactor's tests passed. Local tests require DynamoDB at localhost:8000 and `DynamoDbLocalAvailable=True`; Authz tests create and remove a uniquely named test table.
-3. Authorization evaluator and enforcement: user confirmed tests passed, including the refactor separating user and credential evaluation. Strong identity reads reuse the common store. Instance integration remains later work.
+3. Authorization evaluator and enforcement: user confirmed tests passed, including the refactor separating user and credential evaluation. Strong identity reads reuse the common store. Instance integration is described above.
 4. Policy-management implementation and concurrency tests: user confirmed checks passed. Unit tests cover owner enforcement on all eight operations, target validation, cleanup, immutable results, and error propagation. DynamoDB Local tests exercise the management lifecycle, evaluator visibility, and concurrent revision updates through the service.
-5. Management API, audit records, and integration tests: user confirmed both the audit and management API checkpoints passed, including all eight endpoints, owner enforcement, authentication-before-parsing, account isolation, request limits, status mapping, and audit outcomes. Verification includes the user's local SpotBugs suppression adjustments. Instance integration remains a separate milestone.
+5. Management API, audit records, and integration tests: user confirmed both the audit and management API checkpoints passed, including all eight endpoints, owner enforcement, authentication-before-parsing, account isolation, request limits, status mapping, and audit outcomes. Verification includes the user's local SpotBugs suppression adjustments. Instance integration is described above.
 
 Each checkpoint is committed before pausing for the user to run tests. Do not proceed past a checkpoint until its results are reviewed.
