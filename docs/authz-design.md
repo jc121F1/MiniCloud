@@ -1,8 +1,8 @@
 # Authorization design
 
-Status: Authz foundation checkpoints 1–5 and instance integration checkpoints 1–2 were verified by user-run tests and checks. The user confirmed the final instance integration tests pass. Checkstyle and SpotBugs have not been reported for the final test-only edits. The user confirmed the auth identity integration tests pass; static-check results have not been separately reported.
+Status: Authz foundation checkpoints 1–5, instance integration checkpoints 1–2, ownership transfer, and the complete HTTP lifecycle were verified by user-run tests. The user also confirmed that `checkstyleMain`, `checkstyleTest`, `spotbugsMain`, and `spotbugsTest` pass after the lifecycle changes. Codex has not run tests or Gradle checks.
 
-Ownership-transfer checkpoint: after an earlier pass report, the user reported a failure in `OwnershipTransferTest.rejects_credential_and_member_without_writing`. The credential fixture lacked a strongly consistent store response, so the evaluator reported a storage error before the intended credential denial. The fixture was corrected in `d36fc64`. The user confirmed that the corrected `OwnershipTransferTest`, `checkstyleTest`, and `spotbugsTest` pass. Codex has not run tests or Gradle checks. The broader HTTP authorization lifecycle checkpoint is implemented and awaits user-run verification.
+Ownership-transfer checkpoint: after an earlier pass report, the user reported a failure in `OwnershipTransferTest.rejects_credential_and_member_without_writing`. The credential fixture lacked a strongly consistent store response, so the evaluator reported a storage error before the intended credential denial. The fixture was corrected in `d36fc64`. The user confirmed that the corrected `OwnershipTransferTest`, `checkstyleTest`, and `spotbugsTest` pass. The user has also confirmed the broader HTTP authorization lifecycle tests pass.
 
 ## Scope and existing foundation
 
@@ -99,7 +99,7 @@ The account and user rows remain in Auth-owned DynamoDB tables. The common `Dyna
 
 Ownership checkpoint tests include service authorization and audit outcomes, HTTP mapping, and opt-in DynamoDB Local transaction races. Run with DynamoDB Local at localhost:8000 and `DynamoDbLocalAvailable=True` to include the persistence suite.
 
-The user initially reported the ownership checkpoint commands passed, then reported the specific credential-fixture test failure above. After the fixture correction, the user confirmed `OwnershipTransferTest`, `checkstyleTest`, and `spotbugsTest` pass. The broader lifecycle test below has not yet been reported as verified.
+The user initially reported the ownership checkpoint commands passed, then reported the specific credential-fixture test failure above. After the fixture correction, the user confirmed `OwnershipTransferTest`, `checkstyleTest`, and `spotbugsTest` pass. The broader lifecycle tests below were subsequently reported as passing.
 
 Ownership checkpoint commands from PowerShell in the repository root (with DynamoDB Local running for the second command):
 
@@ -124,7 +124,7 @@ $env:DynamoDbLocalAvailable='True'; .\gradlew.bat test --tests 'jc121f1.e2e.Auth
 .\gradlew.bat checkstyleMain checkstyleTest spotbugsMain spotbugsTest
 ```
 
-Verification is pending. No microservice extraction has begun.
+The user confirmed that both the lifecycle test command and the Checkstyle/SpotBugs command above pass. No microservice extraction has begun.
 
 ## Enforcement and verification
 
