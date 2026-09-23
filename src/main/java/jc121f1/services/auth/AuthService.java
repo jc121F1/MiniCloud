@@ -8,6 +8,8 @@ import jc121f1.model.auth.api.request.GenerateCredentialRequest;
 import jc121f1.model.auth.api.request.GetUserRequest;
 import jc121f1.model.auth.api.request.InvalidateCredentialRequest;
 import jc121f1.model.auth.api.request.LoginRequest;
+import jc121f1.model.auth.api.request.TransferOwnershipRequest;
+import jc121f1.model.auth.dao.Account;
 import jc121f1.model.auth.dao.AuthenticatedSession;
 import jc121f1.model.auth.dao.PublicFacingCredential;
 import jc121f1.model.auth.dao.Session;
@@ -23,6 +25,7 @@ public interface AuthService {
     User createUser(AuthenticatedSession caller, CreateUserRequest createUserRequest);
     User getUser(AuthenticatedSession caller, GetUserRequest getUserRequest);
     User deleteUser(AuthenticatedSession caller, DeleteUserRequest deleteUserRequest);
+    Account transferOwnership(AuthenticatedSession caller, TransferOwnershipRequest request);
     Session login(LoginRequest loginRequest);
     Session exchangeServiceCredential(ExchangeServiceCredentialRequest request);
     PublicFacingCredential generateCredential(GenerateCredentialRequest request);

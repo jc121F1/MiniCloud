@@ -2,6 +2,8 @@
 
 Status: Authz foundation checkpoints 1–5 and instance integration checkpoints 1–2 were verified by user-run tests and checks. The user confirmed the final instance integration tests pass. Checkstyle and SpotBugs have not been reported for the final test-only edits. The user confirmed the auth identity integration tests pass; static-check results have not been separately reported.
 
+Ownership-transfer checkpoint is implemented and awaiting user-run verification. No tests or Gradle checks have been run by Codex for this checkpoint. Broader HTTP authorization lifecycle tests remain for the next checkpoint.
+
 ## Scope and existing foundation
 
 Authn establishes identity; Authz decides whether that identity may perform an action on a resource. MiniCloud already has accounts with an `ownerId`, users, credentials, and `AuthenticatedSession(accountId, subjectId, subjectType)`. Current account checks live in `AuthAuthorizationHandler`; they are not a general permission system.
@@ -90,6 +92,20 @@ Each policy tracks an attachment count. Attach/detach transactions conditionally
 Conflicting concurrent operations either resolve idempotently or report a conflict for the caller to retry. Throttling/unavailability and malformed stored data are storage errors. Reads spanning multiple rows are not a single database snapshot: a concurrent detach followed by deletion may make an in-flight attachment read fail closed and require retry. Completed changes are visible to later evaluations. DynamoDB transactions are internal to Authz; future resource services access Authz through its API, not this table.
 
 New-account signup establishes the first user as owner through the existing account creation flow. Ownership transfer requires the current owner and an existing same-account user, and updates ownership atomically. Reject deletion of the current owner. Lost-owner recovery is an explicit operator procedure outside the public API; no unauthenticated recovery endpoint.
+
+`POST /users/transfer-ownership` takes `{"newOwnerUserId":"u-..."}` and requires a user bearer session. AuthService enforces the service-owned `AuthAction.TRANSFER_OWNERSHIP` through the audited evaluator. Only the current owner of an active account may call it; attached denies cannot remove this recovery right. Credentials and nonowners are denied. The service rechecks the owner with a strongly consistent account read after authorization, checks the proposed user with a strongly consistent identity read, then submits the observed owner to persistence. A transfer to the same owner is an idempotent, conditional no-op; it still requires current ownership and an existing user. A missing or foreign target returns 404; malformed input returns 400; stale owner or deletion races return 409. A caller may reread state and retry a conflict. Storage failures return 500 and do not report completion. A successful response contains the account with its new owner, not credentials or sessions. The audited decision and a separate identity-operation completion/failure event record the result without secrets.
+
+The account and user rows remain in Auth-owned DynamoDB tables. The common `DynamoDbStore` transaction builder now offers a mapped-item condition check, composed with existing conditional CRUD builders. Transfer atomically checks that the account still has the owner observed during authorization and remains active, and that the proposed user still exists in that account. User deletion atomically checks that the account's current owner is different from the target while deleting the user and its unique email lock. Competing transfers and transfer/deletion races cannot leave an account owned by a deleted user. A preauthorized request may still finish if it wins the transaction; completed owner changes are visible to subsequent strong reads. These cross-table transactions are an in-process Auth persistence guarantee. Extracting Auth to another service or changing storage boundaries requires a new protocol preserving the same owner/user atomicity; shared database access from another service is not the contract.
+
+Ownership checkpoint tests include service authorization and audit outcomes, HTTP mapping, and opt-in DynamoDB Local transaction races. Run with DynamoDB Local at localhost:8000 and `DynamoDbLocalAvailable=True` to include the persistence suite. Verification results are pending; do not infer that these tests or static checks have passed.
+
+Ownership checkpoint commands from PowerShell in the repository root (with DynamoDB Local running for the second command):
+
+```powershell
+.\gradlew.bat test --tests 'jc121f1.service.auth.OwnershipTransferTest' --tests 'jc121f1.integration.AuthApiIntegrationTest' --tests 'jc121f1.service.auth.AuthServiceTest' --tests 'jc121f1.service.auth.AuthServiceFailureTest' --tests 'jc121f1.service.auth.AuthServiceLifecycleTest' --tests 'jc121f1.service.auth.AuthServiceAuthorizationTest'
+$env:DynamoDbLocalAvailable='True'; .\gradlew.bat test --tests 'jc121f1.service.auth.OwnershipTransferLocalTest'; Remove-Item Env:\DynamoDbLocalAvailable
+.\gradlew.bat checkstyleMain checkstyleTest spotbugsMain spotbugsTest
+```
 
 ## Enforcement and verification
 

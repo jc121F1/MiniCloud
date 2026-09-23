@@ -17,7 +17,8 @@ public record AuthorizationAuditEvent(String occurredAt, Kind kind, PrincipalRef
 
     public enum Kind {
         DECISION,
-        POLICY_OPERATION
+        POLICY_OPERATION,
+        IDENTITY_OPERATION
     }
 
     public enum Outcome {

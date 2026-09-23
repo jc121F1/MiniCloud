@@ -13,6 +13,7 @@ import software.amazon.awssdk.enhanced.dynamodb.model.Page;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.ConditionCheck;
 import software.amazon.awssdk.services.dynamodb.model.Delete;
 import software.amazon.awssdk.services.dynamodb.model.Projection;
 import software.amazon.awssdk.services.dynamodb.model.Put;
@@ -413,6 +414,16 @@ public abstract class DynamoDbStore<T> implements GenericStore<T> {
         }
 
         return List.copyOf(transactItems);
+    }
+
+    /** Condition on a mapped item, composable with CRUD writes in one transaction. */
+    protected TransactWriteItem checkItem(T item, Expression condition) {
+        Objects.requireNonNull(condition, "condition");
+        return TransactWriteItem.builder().conditionCheck(ConditionCheck.builder()
+                .tableName(definition.tableName()).key(keyMap(keyOf(item)))
+                .conditionExpression(condition.expression())
+                .expressionAttributeNames(nonEmpty(condition.expressionNames()))
+                .expressionAttributeValues(nonEmpty(condition.expressionValues())).build()).build();
     }
 
     /** Base-table queries support strong consistency; GSIs do not. SDK pages are consumed fully. */

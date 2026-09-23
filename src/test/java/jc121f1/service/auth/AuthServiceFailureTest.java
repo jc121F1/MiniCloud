@@ -115,9 +115,9 @@ class AuthServiceFailureTest {
     @Test
     void failed_deletion_is_not_reported_as_success() {
         Mockito.when(users.get("u-1")).thenReturn(CompletableFuture.completedFuture(Optional.of(USER)));
-        Mockito.when(users.delete(USER)).thenReturn(CompletableFuture.failedFuture(failure));
+        Mockito.when(accounts.deleteUserIfNotOwner(USER)).thenReturn(CompletableFuture.failedFuture(failure));
         Assertions.assertThatThrownBy(() -> service.deleteUser(CALLER, new DeleteUserRequest("u-1", null))).hasCause(failure);
-        Mockito.verifyNoInteractions(accounts, credentials, sessions);
+        Mockito.verifyNoInteractions(credentials, sessions);
     }
 
     @Test

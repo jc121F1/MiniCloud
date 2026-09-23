@@ -10,6 +10,7 @@ import jc121f1.model.auth.api.request.GenerateCredentialRequest;
 import jc121f1.model.auth.api.request.GetUserRequest;
 import jc121f1.model.auth.api.request.InvalidateCredentialRequest;
 import jc121f1.model.auth.api.request.LoginRequest;
+import jc121f1.model.auth.api.request.TransferOwnershipRequest;
 import jc121f1.model.auth.dao.Account;
 import jc121f1.model.auth.dao.AuthenticatedSession;
 import jc121f1.model.auth.dao.Credential;
@@ -21,6 +22,10 @@ import jc121f1.model.authz.ServiceId;
 import jc121f1.services.auth.authorization.AuthAction;
 import jc121f1.services.auth.authorization.AuthResourceType;
 import jc121f1.services.authz.AuthorizationService;
+import jc121f1.services.authz.audit.AuthorizationAudit;
+import jc121f1.services.authz.audit.AuthorizationAuditEvent;
+import jc121f1.services.authz.exceptions.AuthorizationDeniedException;
+import jc121f1.services.authz.exceptions.AuthorizationStoreException;
 import jc121f1.services.auth.store.AccountStore;
 import jc121f1.services.auth.store.CredentialStore;
 import jc121f1.services.auth.store.SessionStore;
@@ -40,6 +45,8 @@ import java.util.Base64;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.CompletableFuture;
 
 public class AuthServiceImpl implements AuthService {
 
@@ -53,6 +60,7 @@ public class AuthServiceImpl implements AuthService {
     private final CredentialStore credentialStore;
     private final SecureRandom secureRandom;
     private final AuthorizationService authorizationService;
+    private final AuthorizationAudit audit;
 
     @Inject
     @SuppressFBWarnings(
@@ -64,7 +72,7 @@ public class AuthServiceImpl implements AuthService {
                     UserStore userStore,
                     Clock clock,
                     SessionStore sessionStore, CredentialStore credentialStore,
-                    SecureRandom secureRandom, AuthorizationService authorizationService) {
+                    SecureRandom secureRandom, AuthorizationService authorizationService, AuthorizationAudit audit) {
         this.accountStore = accountStore;
         this.userStore = userStore;
         this.clock = clock;
@@ -72,6 +80,15 @@ public class AuthServiceImpl implements AuthService {
         this.credentialStore = credentialStore;
         this.secureRandom = secureRandom;
         this.authorizationService = authorizationService;
+        this.audit = audit;
+    }
+
+    /** Convenience constructor for existing service tests. Production uses the injected audited constructor. */
+    public AuthServiceImpl(AccountStore accountStore, UserStore userStore, Clock clock, SessionStore sessionStore,
+                           CredentialStore credentialStore, SecureRandom secureRandom,
+                           AuthorizationService authorizationService) {
+        this(accountStore, userStore, clock, sessionStore, credentialStore, secureRandom, authorizationService,
+                new AuthorizationAudit(clock, event -> { }));
     }
 
     @Override
@@ -177,8 +194,54 @@ public class AuthServiceImpl implements AuthService {
         User user = getUser(identifier);
         authorizationService.authorize(caller, AuthAction.DELETE_USER,
                 resource(user.accountId(), AuthResourceType.USER, user.userId()));
-        userStore.delete(user).join();
+        accountStore.deleteUserIfNotOwner(user).join();
         return user;
+    }
+
+    @Override
+    public Account transferOwnership(AuthenticatedSession caller, TransferOwnershipRequest request) {
+        Objects.requireNonNull(caller, "caller");
+        ResourceReference target = resource(caller.accountId(), AuthResourceType.ACCOUNT, caller.accountId());
+        try {
+            requireRequest(request);
+            requireText(request.newOwnerUserId(), "newOwnerUserId");
+            authorizationService.authorize(caller, AuthAction.TRANSFER_OWNERSHIP, target);
+            Account observed = identityRead(accountStore.get(caller.accountId(), true))
+                    .orElseThrow(() -> new AuthorizationDeniedException());
+            if (observed.status() != Account.AccountStatus.ACTIVE
+                    || caller.subjectType() != Session.SubjectType.USER
+                    || !caller.subjectId().equals(observed.ownerId())) {
+                throw new AuthorizationDeniedException();
+            }
+            User proposed = identityRead(userStore.get(request.newOwnerUserId(), true))
+                    .filter(user -> caller.accountId().equals(user.accountId()))
+                    .orElseThrow(() -> new ResourceNotFoundException("New owner not found"));
+            Account result = accountStore.transferOwnership(observed, proposed, clock.instant()).join();
+            audit.identitySuccess(caller, AuthAction.TRANSFER_OWNERSHIP.value(), target);
+            return result;
+        } catch (RuntimeException error) {
+            RuntimeException failure = unwrap(error);
+            audit.failure(AuthorizationAuditEvent.Kind.IDENTITY_OPERATION, caller, AuthAction.TRANSFER_OWNERSHIP.value(),
+                    target, null, null, failure);
+            throw failure;
+        }
+    }
+
+    private static RuntimeException unwrap(RuntimeException error) {
+        Throwable cause = error;
+        while (cause instanceof CompletionException && cause.getCause() != null) {
+            cause = cause.getCause();
+        }
+        return cause instanceof RuntimeException runtime ? runtime
+                : new AuthorizationStoreException("Identity storage failed", cause);
+    }
+
+    private static <T> T identityRead(CompletableFuture<T> read) {
+        try {
+            return read.join();
+        } catch (RuntimeException error) {
+            throw new AuthorizationStoreException("Unable to read current identity state", unwrap(error));
+        }
     }
 
     @Override

@@ -8,6 +8,7 @@ import jc121f1.wbs.handlers.auth.GenerateCredentialHandler;
 import jc121f1.wbs.handlers.auth.ExchangeServiceCredentialHandler;
 import jc121f1.wbs.handlers.auth.InvalidateCredentialHandler;
 import jc121f1.wbs.handlers.auth.AuthAuthorizationHandler;
+import jc121f1.wbs.handlers.auth.TransferOwnershipHandler;
 import jc121f1.wbs.handlers.RootHandler;
 
 public interface AuthWebServiceHandlers extends AuthHandlers {
@@ -20,4 +21,5 @@ public interface AuthWebServiceHandlers extends AuthHandlers {
     ExchangeServiceCredentialHandler exchangeServiceCredentialHandler();
     InvalidateCredentialHandler invalidateCredentialHandler();
     AuthAuthorizationHandler authAuthorizationHandler();
+    TransferOwnershipHandler transferOwnershipHandler();
 }

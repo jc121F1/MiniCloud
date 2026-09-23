@@ -248,9 +248,9 @@ public class AuthServiceTest {
                 User expected = user();
                 Mockito.when(userStore.get(EMAIL)).thenReturn(CompletableFuture.completedFuture(Optional.empty()));
                 Mockito.when(userStore.findByEmail(EMAIL)).thenReturn(CompletableFuture.completedFuture(expected));
-                Mockito.when(userStore.delete(expected)).thenReturn(CompletableFuture.completedFuture(null));
+                Mockito.when(accountStore.deleteUserIfNotOwner(expected)).thenReturn(CompletableFuture.completedFuture(null));
                 Assertions.assertThat(authService.deleteUser(CALLER, new DeleteUserRequest(null, EMAIL))).isEqualTo(expected);
-                Mockito.verify(userStore).delete(expected);
+                Mockito.verify(accountStore).deleteUserIfNotOwner(expected);
             }
 
             @Test

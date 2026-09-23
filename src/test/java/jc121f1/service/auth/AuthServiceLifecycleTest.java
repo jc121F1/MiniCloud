@@ -214,9 +214,29 @@ class AuthServiceLifecycleTest {
         }
     }
 
-    private static class Accounts extends MemoryStore<Account> implements AccountStore {
+    private class Accounts extends MemoryStore<Account> implements AccountStore {
         Accounts() {
             super(Account::accountId);
+        }
+
+        @Override
+        public CompletableFuture<Account> transferOwnership(Account observed, User proposedOwner, Instant updatedAt) {
+            Account current = items.get(observed.accountId());
+            if (!current.ownerId().equals(observed.ownerId())) {
+                return CompletableFuture.failedFuture(new IllegalStateException("Stale owner"));
+            }
+            Account updated = current.toBuilder().ownerId(proposedOwner.userId()).updatedAt(updatedAt).build();
+            items.put(current.accountId(), updated);
+            return CompletableFuture.completedFuture(updated);
+        }
+
+        @Override
+        public CompletableFuture<Void> deleteUserIfNotOwner(User user) {
+            if (items.get(user.accountId()).ownerId().equals(user.userId())) {
+                return CompletableFuture.failedFuture(new IllegalStateException("Owner protected"));
+            }
+            users.items.remove(user.userId());
+            return CompletableFuture.completedFuture(null);
         }
     }
 

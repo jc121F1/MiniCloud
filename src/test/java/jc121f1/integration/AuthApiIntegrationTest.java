@@ -10,6 +10,8 @@ import jc121f1.model.auth.api.request.GenerateCredentialRequest;
 import jc121f1.model.auth.api.request.GetUserRequest;
 import jc121f1.model.auth.api.request.InvalidateCredentialRequest;
 import jc121f1.model.auth.api.request.LoginRequest;
+import jc121f1.model.auth.api.request.TransferOwnershipRequest;
+import jc121f1.model.auth.dao.Account;
 import jc121f1.model.auth.dao.AuthenticatedSession;
 import jc121f1.model.auth.dao.PublicFacingCredential;
 import jc121f1.model.auth.dao.Session;
@@ -28,6 +30,10 @@ import jc121f1.wbs.handlers.auth.GenerateCredentialHandler;
 import jc121f1.wbs.handlers.auth.GetUserHandler;
 import jc121f1.wbs.handlers.auth.InvalidateCredentialHandler;
 import jc121f1.wbs.handlers.auth.LoginHandler;
+import jc121f1.wbs.handlers.auth.TransferOwnershipHandler;
+import jc121f1.services.authz.exceptions.PolicyConflictException;
+import jc121f1.services.instance.exceptions.ValidationException;
+import jc121f1.services.instance.exceptions.ResourceNotFoundException;
 import jc121f1.wbs.services.AuthWebService;
 import lombok.SneakyThrows;
 import org.assertj.core.api.Assertions;
@@ -65,6 +71,7 @@ class AuthApiIntegrationTest {
         Mockito.when(component.generateCredentialHandler()).thenReturn(new GenerateCredentialHandler(service));
         Mockito.when(component.exchangeServiceCredentialHandler()).thenReturn(new ExchangeServiceCredentialHandler(service));
         Mockito.when(component.invalidateCredentialHandler()).thenReturn(new InvalidateCredentialHandler(service));
+        Mockito.when(component.transferOwnershipHandler()).thenReturn(new TransferOwnershipHandler(service));
         Mockito.when(service.authenticate(Mockito.any())).thenAnswer(call -> {
             AuthenticateRequest request = call.getArgument(0);
             if (!"valid-token".equals(request.bearerToken())) {
@@ -173,6 +180,31 @@ class AuthApiIntegrationTest {
                 "{\"email\":\"user@example.com\",\"password\":\"password\"}", false);
         Assertions.assertThat(denied.statusCode()).isEqualTo(403);
         Mockito.verify(service, Mockito.never()).authenticate(Mockito.any());
+    }
+
+    @Test
+    void transfer_requires_authentication_and_maps_success_validation_denial_and_conflict() {
+        String path = "/users/transfer-ownership";
+        String valid = "{\"newOwnerUserId\":\"u-2\"}";
+        Assertions.assertThat(post(path, valid, false).statusCode()).isEqualTo(401);
+        Mockito.when(service.transferOwnership(caller, new TransferOwnershipRequest("u-2")))
+                .thenReturn(Account.builder().accountId("a-1").ownerId("u-2").status(Account.AccountStatus.ACTIVE).build());
+        var success = post(path, valid, true);
+        Assertions.assertThat(success.statusCode()).isEqualTo(200);
+        Assertions.assertThat(success.body()).contains("u-2").doesNotContain("valid-token", "private-password-hash");
+        Mockito.when(service.transferOwnership(caller, new TransferOwnershipRequest(null)))
+                .thenThrow(new ValidationException("newOwnerUserId is required"));
+        Assertions.assertThat(post(path, "{}", true).statusCode()).isEqualTo(400);
+        Mockito.when(service.transferOwnership(caller, new TransferOwnershipRequest("u-denied")))
+                .thenThrow(new AuthorizationDeniedException());
+        Assertions.assertThat(post(path, "{\"newOwnerUserId\":\"u-denied\"}", true).statusCode()).isEqualTo(403);
+        Mockito.when(service.transferOwnership(caller, new TransferOwnershipRequest("u-missing")))
+                .thenThrow(new ResourceNotFoundException("New owner not found"));
+        Assertions.assertThat(post(path, "{\"newOwnerUserId\":\"u-missing\"}", true).statusCode()).isEqualTo(404);
+        Mockito.when(service.transferOwnership(caller, new TransferOwnershipRequest("u-stale")))
+                .thenThrow(new PolicyConflictException("stale owner"));
+        Assertions.assertThat(post(path, "{\"newOwnerUserId\":\"u-stale\"}", true).statusCode()).isEqualTo(409);
+        Mockito.verify(service, Mockito.never()).transferOwnership(Mockito.isNull(), Mockito.any());
     }
 
     @SneakyThrows

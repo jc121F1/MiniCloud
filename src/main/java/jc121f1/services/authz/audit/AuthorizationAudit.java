@@ -41,6 +41,10 @@ public final class AuthorizationAudit {
         record(Kind.POLICY_OPERATION, caller, action, resource, target, expectedRevision, Outcome.SUCCESS, "COMPLETED", policies);
     }
 
+    public void identitySuccess(AuthenticatedSession caller, String action, ResourceReference resource) {
+        record(Kind.IDENTITY_OPERATION, caller, action, resource, null, null, Outcome.SUCCESS, "COMPLETED", List.of());
+    }
+
     public void failure(Kind kind, AuthenticatedSession caller, String action, ResourceReference resource,
                         PrincipalReference target, Long expectedRevision, RuntimeException error) {
         Outcome outcome = error instanceof AuthorizationDeniedException ? Outcome.DENY : Outcome.ERROR;
@@ -64,6 +68,8 @@ public final class AuthorizationAudit {
         return switch (error) {
             case AuthorizationDeniedException ignored -> "ACCESS_DENIED";
             case PolicyValidationException ignored -> "INVALID_INPUT";
+            case jc121f1.services.instance.exceptions.ValidationException ignored -> "INVALID_INPUT";
+            case jc121f1.services.instance.exceptions.ResourceNotFoundException ignored -> "NOT_FOUND";
             case PolicyNotFoundException ignored -> "NOT_FOUND";
             case PolicyConflictException ignored -> "CONFLICT";
             case AuthorizationStoreException ignored -> "STORAGE_FAILURE";
