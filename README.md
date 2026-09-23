@@ -141,6 +141,14 @@ The project includes:
 
 The Gradle build generates a JaCoCo coverage report and treats Checkstyle and SpotBugs failures as build failures.
 
+The end-to-end tests exercise two infrastructure paths. `AuthorizationLifecycleEndToEndTest`
+uses real HTTP and DynamoDB Local with a controlled compute backend; set
+`DynamoDbLocalAvailable=True` to run it. `InstanceServiceEndToEndTest` also uses
+Docker and requires both `DynamoDbLocalAvailable=True` and
+`DockerE2EAvailable=True`. Start DynamoDB Local on port 8000 before running
+either test. The Docker test also requires a working Docker daemon and the
+MiniCloud image. These tests are skipped when their environment flags are absent.
+
 ## Technology Stack
 
 | Component            | Technology                |

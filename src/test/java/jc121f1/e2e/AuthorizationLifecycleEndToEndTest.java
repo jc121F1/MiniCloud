@@ -318,6 +318,51 @@ class AuthorizationLifecycleEndToEndTest {
         Assertions.assertThat(other.path("accountId").asText()).isNotEqualTo(account);
     }
 
+    @Test
+    void instance_operations_are_isolated_between_accounts() throws Exception {
+        String password = "p-" + suffix;
+        String firstEmail = "isolation-first-" + suffix + "@example.test";
+        String secondEmail = "isolation-second-" + suffix + "@example.test";
+        String firstAccount = body(call(authApp, "POST", "/users/create",
+                Map.of("userEmail", firstEmail, "password", password), null), 200)
+                .path("accountId").asText();
+        String secondAccount = body(call(authApp, "POST", "/users/create",
+                Map.of("userEmail", secondEmail, "password", password), null), 200)
+                .path("accountId").asText();
+        String firstToken = login(firstEmail, password);
+        String secondToken = login(secondEmail, password);
+        String firstId = body(call(instanceApp, "POST", "/instances",
+                Map.of("name", "isolation-first-" + suffix, "cpu", 1, "memory", 1), firstToken), 200)
+                .path("id").asText();
+        String secondId = body(call(instanceApp, "POST", "/instances",
+                Map.of("name", "isolation-second-" + suffix, "cpu", 1, "memory", 1), secondToken), 200)
+                .path("id").asText();
+
+        Assertions.assertThat(firstAccount).isNotEqualTo(secondAccount);
+        Assertions.assertThat(body(call(instanceApp, "POST", "/instances/describe",
+                Map.of("instanceId", firstId), firstToken), 200).path("id").asText())
+                .isEqualTo(firstId);
+        Assertions.assertThat(body(call(instanceApp, "POST", "/instances/describe",
+                Map.of("instanceId", secondId), secondToken), 200).path("id").asText())
+                .isEqualTo(secondId);
+        Assertions.assertThat(body(call(instanceApp, "GET", "/instances", null, firstToken), 200).toString())
+                .contains(firstId).doesNotContain(secondId);
+        Assertions.assertThat(body(call(instanceApp, "GET", "/instances", null, secondToken), 200).toString())
+                .contains(secondId).doesNotContain(firstId);
+
+        for (String path : List.of("/instances/describe", "/instances/start",
+                "/instances/stop", "/instances/delete")) {
+            HttpResponse<String> denied = call(instanceApp, "POST", path,
+                    Map.of("instanceId", firstId), secondToken);
+            status(denied, 403);
+            Assertions.assertThat(denied.body()).doesNotContain(firstId, firstToken, secondToken);
+        }
+        Assertions.assertThat(backend.created).contains(firstId, secondId);
+        Assertions.assertThat(body(call(instanceApp, "POST", "/instances/describe",
+                Map.of("instanceId", firstId), firstToken), 200).path("id").asText())
+                .isEqualTo(firstId);
+    }
+
     private String login(String email, String password) throws Exception {
         Awaitility.await("new user email index to become visible").atMost(Duration.ofSeconds(10))
                 .until(() -> call(authApp, "POST", "/users/login",
