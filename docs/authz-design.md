@@ -2,7 +2,7 @@
 
 Status: Authz foundation checkpoints 1–5 and instance integration checkpoints 1–2 were verified by user-run tests and checks. The user confirmed the final instance integration tests pass. Checkstyle and SpotBugs have not been reported for the final test-only edits. The user confirmed the auth identity integration tests pass; static-check results have not been separately reported.
 
-Ownership-transfer checkpoint: the user reported that its requested tests and checks passed. Codex did not run tests or Gradle checks. The broader HTTP authorization lifecycle checkpoint is implemented and awaiting user-run verification.
+Ownership-transfer checkpoint: after an earlier pass report, the user reported a failure in `OwnershipTransferTest.rejects_credential_and_member_without_writing`. The credential fixture lacked a strongly consistent store response, so the evaluator reported a storage error before the intended credential denial. The fixture has been corrected and that test awaits rerun. Codex has not run tests or Gradle checks. The broader HTTP authorization lifecycle checkpoint is implemented and awaits user-run verification.
 
 ## Scope and existing foundation
 
@@ -99,7 +99,7 @@ The account and user rows remain in Auth-owned DynamoDB tables. The common `Dyna
 
 Ownership checkpoint tests include service authorization and audit outcomes, HTTP mapping, and opt-in DynamoDB Local transaction races. Run with DynamoDB Local at localhost:8000 and `DynamoDbLocalAvailable=True` to include the persistence suite.
 
-The user subsequently reported the ownership checkpoint commands passed. The result is user-reported; the broader lifecycle test below has not yet been run or verified.
+The user initially reported the ownership checkpoint commands passed, then reported the specific credential-fixture test failure above. The corrected test has not yet been verified; the broader lifecycle test below has not yet been reported as verified.
 
 Ownership checkpoint commands from PowerShell in the repository root (with DynamoDB Local running for the second command):
 

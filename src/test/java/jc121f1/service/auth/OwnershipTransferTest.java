@@ -5,6 +5,7 @@ import jc121f1.dagger.AuthorizationCatalogModule;
 import jc121f1.model.auth.api.request.TransferOwnershipRequest;
 import jc121f1.model.auth.dao.Account;
 import jc121f1.model.auth.dao.AuthenticatedSession;
+import jc121f1.model.auth.dao.Credential;
 import jc121f1.model.auth.dao.Session;
 import jc121f1.model.auth.dao.User;
 import jc121f1.model.authz.AuthorizationDecision;
@@ -116,10 +117,15 @@ class OwnershipTransferTest {
     @Test
     void rejects_credential_and_member_without_writing() {
         var credential = new AuthenticatedSession("a-1", "cre-1", Session.SubjectType.CREDENTIAL);
+        Mockito.when(credentials.get("cre-1", true)).thenReturn(CompletableFuture.completedFuture(Optional.of(
+                Credential.builder().credentialId("cre-1").accountId("a-1")
+                        .createdByUserId(OLD.userId()).revoked(false).build())));
         Assertions.assertThatThrownBy(() -> service.transferOwnership(NEW_OWNER, new TransferOwnershipRequest("u-old")))
                 .isInstanceOf(AuthorizationDeniedException.class);
         Assertions.assertThatThrownBy(() -> service.transferOwnership(credential, new TransferOwnershipRequest("u-new")))
                 .isInstanceOf(AuthorizationDeniedException.class);
+        Assertions.assertThat(events).anyMatch(event -> event.kind() == AuthorizationAuditEvent.Kind.DECISION
+                && "CREDENTIAL_OPERATION_FORBIDDEN".equals(event.reason()));
         Mockito.verify(accounts, Mockito.never()).transferOwnership(Mockito.any(), Mockito.any(), Mockito.any());
         Assertions.assertThat(state.get().ownerId()).isEqualTo("u-old");
     }
