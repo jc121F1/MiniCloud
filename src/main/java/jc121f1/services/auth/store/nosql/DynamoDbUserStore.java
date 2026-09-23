@@ -19,6 +19,7 @@ import software.amazon.awssdk.services.dynamodb.model.ProjectionType;
 import javax.inject.Inject;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 @Slf4j
@@ -60,6 +61,11 @@ public final class DynamoDbUserStore extends DynamoDbStore<User> implements User
     @Override
     public CompletableFuture<User> findByEmail(String email) {
         return this.queryByIndex(USER_EMAIL_INDEX, email).thenApply(List::getFirst);
+    }
+
+    @Override
+    public CompletableFuture<Optional<User>> get(String id) {
+        return super.get(id, true);
     }
 
     TransactWriteItem sameAccountCheck(User user) {

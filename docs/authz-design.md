@@ -2,7 +2,7 @@
 
 Status: Authz foundation checkpoints 1–5 and instance integration checkpoints 1–2 were verified by user-run tests and checks. The user confirmed the final instance integration tests pass. Checkstyle and SpotBugs have not been reported for the final test-only edits. The user confirmed the auth identity integration tests pass; static-check results have not been separately reported.
 
-Ownership-transfer checkpoint is implemented and awaiting user-run verification. No tests or Gradle checks have been run by Codex for this checkpoint. Broader HTTP authorization lifecycle tests remain for the next checkpoint.
+Ownership-transfer checkpoint: the user reported that its requested tests and checks passed. Codex did not run tests or Gradle checks. The broader HTTP authorization lifecycle checkpoint is implemented and awaiting user-run verification.
 
 ## Scope and existing foundation
 
@@ -97,7 +97,9 @@ New-account signup establishes the first user as owner through the existing acco
 
 The account and user rows remain in Auth-owned DynamoDB tables. The common `DynamoDbStore` transaction builder now offers a mapped-item condition check, composed with existing conditional CRUD builders. Transfer atomically checks that the account still has the owner observed during authorization and remains active, and that the proposed user still exists in that account. User deletion atomically checks that the account's current owner is different from the target while deleting the user and its unique email lock. Competing transfers and transfer/deletion races cannot leave an account owned by a deleted user. A preauthorized request may still finish if it wins the transaction; completed owner changes are visible to subsequent strong reads. These cross-table transactions are an in-process Auth persistence guarantee. Extracting Auth to another service or changing storage boundaries requires a new protocol preserving the same owner/user atomicity; shared database access from another service is not the contract.
 
-Ownership checkpoint tests include service authorization and audit outcomes, HTTP mapping, and opt-in DynamoDB Local transaction races. Run with DynamoDB Local at localhost:8000 and `DynamoDbLocalAvailable=True` to include the persistence suite. Verification results are pending; do not infer that these tests or static checks have passed.
+Ownership checkpoint tests include service authorization and audit outcomes, HTTP mapping, and opt-in DynamoDB Local transaction races. Run with DynamoDB Local at localhost:8000 and `DynamoDbLocalAvailable=True` to include the persistence suite.
+
+The user subsequently reported the ownership checkpoint commands passed. The result is user-reported; the broader lifecycle test below has not yet been run or verified.
 
 Ownership checkpoint commands from PowerShell in the repository root (with DynamoDB Local running for the second command):
 
@@ -106,6 +108,23 @@ Ownership checkpoint commands from PowerShell in the repository root (with Dynam
 $env:DynamoDbLocalAvailable='True'; .\gradlew.bat test --tests 'jc121f1.service.auth.OwnershipTransferLocalTest'; Remove-Item Env:\DynamoDbLocalAvailable
 .\gradlew.bat checkstyleMain checkstyleTest spotbugsMain spotbugsTest
 ```
+
+## Complete HTTP lifecycle checkpoint
+
+`AuthorizationLifecycleEndToEndTest` starts the three real HTTP services against one isolated set of six uniquely named DynamoDB Local tables and wires a controlled in-memory compute backend. It uses the real identity, session, credential, instance, policy, and audited authorization services. The test creates unique accounts and identities, exercises authenticated policy management and credential exchange, checks default deny, action-specific grants, list and cross-account filtering, explicit deny, replacement and detachment visibility, revocation, user deletion, ownership transfer, recovery rights, creator ceiling changes, and audit secrecy. It deletes its own tables and stops its servers during cleanup. The legacy Docker end-to-end test is not part of this checkpoint.
+
+Primary-key identity reads and generic scans now request strong consistency. New-user login still uses the user email GSI, which is eventually consistent; the test polls for that index with a bounded wait, without sleeping for a fixed duration. Policy attachment and document reads already use strongly consistent base-table operations. Requests begun after a completed detach, replacement, deletion, revocation, or transfer must see its effect. A request that passed authorization before such a change may complete; this suite does not assert cancellation of in-flight work. A scan is strongly consistent per read but is not a multi-item snapshot.
+
+Credential exchange updates `lastUsedAt` only while the stored credential remains unrevoked. This prevents a late exchange write from restoring a credential that a concurrent request already revoked. The lifecycle suite checks the persisted condition against a stale credential value after HTTP revocation. A racing exchange can fail as a storage conflict; it cannot reenable the credential.
+
+Run from PowerShell in the repository root with DynamoDB Local at localhost:8000:
+
+```powershell
+$env:DynamoDbLocalAvailable='True'; .\gradlew.bat test --tests 'jc121f1.e2e.AuthorizationLifecycleEndToEndTest' --tests 'jc121f1.service.auth.CredentialOwnershipTest'; Remove-Item Env:\DynamoDbLocalAvailable
+.\gradlew.bat checkstyleMain checkstyleTest spotbugsMain spotbugsTest
+```
+
+Verification is pending. No microservice extraction has begun.
 
 ## Enforcement and verification
 

@@ -23,6 +23,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 
@@ -53,6 +54,11 @@ public final class DynamoDbAccountStore extends DynamoDbStore<Account> implement
     ) {
         super(dynamoDbAsyncClient, table, createDefinition(TABLE_NAME));
         this.users = users;
+    }
+
+    @Override
+    public CompletableFuture<Optional<Account>> get(String id) {
+        return super.get(id, true);
     }
 
     @Override

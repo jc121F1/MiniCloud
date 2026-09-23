@@ -26,7 +26,13 @@ public final class DynamoDbInstanceStore extends DynamoDbStore<Instance> impleme
 
     @Inject
     public DynamoDbInstanceStore(final DynamoDbAsyncClient dynamoDbClient) {
-        super(dynamoDbClient, createDefinition());
+        super(dynamoDbClient, createDefinition(TABLE_NAME));
+        initialize().join();
+    }
+
+    @VisibleForTesting
+    public DynamoDbInstanceStore(final DynamoDbAsyncClient dynamoDbClient, String tableName) {
+        super(dynamoDbClient, createDefinition(tableName));
         initialize().join();
     }
 
@@ -35,12 +41,12 @@ public final class DynamoDbInstanceStore extends DynamoDbStore<Instance> impleme
             final DynamoDbAsyncClient dynamoDbAsyncClient,
             final DynamoDbAsyncTable<Instance> table
     ) {
-        super(dynamoDbAsyncClient, table, createDefinition());
+        super(dynamoDbAsyncClient, table, createDefinition(TABLE_NAME));
     }
 
-    private static DynamoDbStoreDefinition<Instance> createDefinition() {
+    private static DynamoDbStoreDefinition<Instance> createDefinition(String tableName) {
         return new DynamoDbStoreDefinition<>(
-                TABLE_NAME,
+                tableName,
                 TableSchema.fromImmutableClass(Instance.class),
                 Instance::id,
                 List.of(new UniqueConstraint<>("name", Instance::name)),

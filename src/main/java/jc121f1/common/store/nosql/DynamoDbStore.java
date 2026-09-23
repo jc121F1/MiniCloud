@@ -155,6 +155,7 @@ public abstract class DynamoDbStore<T> implements GenericStore<T> {
 
         return table.scan(request ->
                         request
+                                .consistentRead(true)
                                 .filterExpression(
                                         Expression.builder()
                                                 .expression("#recordType = :itemType")
