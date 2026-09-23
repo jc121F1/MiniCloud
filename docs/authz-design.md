@@ -1,6 +1,6 @@
 # Authorization design
 
-Status: Authz foundation checkpoints 1–5 and instance integration checkpoints 1–2 were verified by user-run tests and checks. The user confirmed the final instance integration tests pass. Checkstyle and SpotBugs have not been reported for the final test-only edits. Auth identity integration is implemented but awaits the user's testing checkpoint results.
+Status: Authz foundation checkpoints 1–5 and instance integration checkpoints 1–2 were verified by user-run tests and checks. The user confirmed the final instance integration tests pass. Checkstyle and SpotBugs have not been reported for the final test-only edits. The user confirmed the auth identity integration tests pass; static-check results have not been separately reported.
 
 ## Scope and existing foundation
 
@@ -138,7 +138,7 @@ Integration checkpoint 1 added the persisted, client-hidden ownership field and 
 
 `POST /users/create` with no `accountId` is new-account signup and needs no existing session. The same path with `accountId` adds a user to an existing account and requires a bearer session with `auth:CreateUser` on that account. Direct service callers must use the caller overload for existing-account creation; the signup method rejects a supplied `accountId`. Login and credential exchange remain authentication operations. Credential generation remains password authenticated without a bearer session: after password verification, the service derives the user principal from the stored matching user and enforces `auth:GenerateCredential` on that account before creating the credential. Submitted identifiers never establish the acting principal.
 
-This checkpoint has not yet been verified. The user-run tests and static checks requested below must be reported before further work or verified-result documentation is added.
+The user confirmed the auth identity integration tests pass. Checkstyle and SpotBugs results for this checkpoint have not been separately confirmed. Test consolidation may reduce fixture duplication in a later checkpoint without removing behavior coverage.
 
 ## Future service decomposition
 
