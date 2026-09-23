@@ -62,8 +62,8 @@ public final class DynamoDbCredentialStore extends DynamoDbStore<Credential> imp
             throw new IllegalArgumentException("Revoked credentials cannot be reactivated");
         }
         if (!updated.revoked()) {
-            String guard = "(attribute_not_exists(#credentialRevokedGuard) "
-                    + "OR #credentialRevokedGuard = :credentialActiveGuard)";
+            String guard = "attribute_not_exists(#credentialRevokedGuard) "
+                    + "OR #credentialRevokedGuard = :credentialActiveGuard";
             if (condition == null) {
                 condition = Expression.builder().expression(guard)
                         .expressionNames(Map.of("#credentialRevokedGuard", "revoked"))

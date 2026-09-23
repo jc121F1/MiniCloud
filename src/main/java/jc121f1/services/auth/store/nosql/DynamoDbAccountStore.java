@@ -1,6 +1,7 @@
 package jc121f1.services.auth.store.nosql;
 
 import com.google.common.annotations.VisibleForTesting;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import jc121f1.common.store.nosql.DynamoDbStore;
 import jc121f1.common.store.nosql.DynamoDbStoreDefinition;
 import jc121f1.common.store.nosql.UniqueConstraint;
@@ -34,6 +35,10 @@ public final class DynamoDbAccountStore extends DynamoDbStore<Account> implement
     private final DynamoDbUserStore users;
 
     @Inject
+    @SuppressFBWarnings(
+            value = "EI_EXPOSE_REP2",
+            justification = "Users is an intentionally shared injected dependency."
+    )
     public DynamoDbAccountStore(final DynamoDbAsyncClient dynamoDbClient, DynamoDbUserStore users) {
         super(dynamoDbClient, createDefinition(TABLE_NAME));
         this.users = users;
@@ -41,6 +46,10 @@ public final class DynamoDbAccountStore extends DynamoDbStore<Account> implement
     }
 
     @VisibleForTesting
+    @SuppressFBWarnings(
+            value = "EI_EXPOSE_REP2",
+            justification = "Users is an intentionally shared injected dependency."
+    )
     public DynamoDbAccountStore(final DynamoDbAsyncClient dynamoDbClient, DynamoDbUserStore users, String tableName) {
         super(dynamoDbClient, createDefinition(tableName));
         this.users = users;
@@ -48,6 +57,10 @@ public final class DynamoDbAccountStore extends DynamoDbStore<Account> implement
     }
 
     @VisibleForTesting
+    @SuppressFBWarnings(
+            value = "EI_EXPOSE_REP2",
+            justification = "Users is an intentionally shared injected dependency."
+    )
     public DynamoDbAccountStore(
             final DynamoDbAsyncClient dynamoDbAsyncClient,
             final DynamoDbAsyncTable<Account> table, DynamoDbUserStore users

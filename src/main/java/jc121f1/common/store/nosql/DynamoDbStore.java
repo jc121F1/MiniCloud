@@ -484,7 +484,7 @@ public abstract class DynamoDbStore<T> implements GenericStore<T> {
         if (second == null) {
             return first;
         }
-        return Expression.builder().expression("(" + first.expression() + ") AND (" + second.expression() + ")")
+        return Expression.builder().expression(first.expression() + " AND (" + second.expression() + ")")
                 .expressionNames(merge(first.expressionNames(), second.expressionNames()))
                 .expressionValues(merge(first.expressionValues(), second.expressionValues())).build();
     }
