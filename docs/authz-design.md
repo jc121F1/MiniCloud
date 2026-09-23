@@ -140,6 +140,8 @@ Integration checkpoint 1 added the persisted, client-hidden ownership field and 
 
 The user confirmed the auth identity integration tests pass. Checkstyle and SpotBugs results for this checkpoint have not been separately confirmed. Test consolidation may reduce fixture duplication in a later checkpoint without removing behavior coverage.
 
+A follow-up checkpoint adds service tests using the real audited evaluator in the existing auth authorization test class. They exercise owner read and deletion protection, explicit deny, credential and creator grant intersection, and password-authenticated credential generation before and after a grant. This follow-up has not yet been run by the user.
+
 ## Future service decomposition
 
 Services own their action catalogs and resource ownership data. Auth owns identities; Authz owns policies and decisions. Shared contracts can move into a small independently versioned API artifact, with service action enums in each service's contract artifact. Authz's evaluator and validator must not import compute implementations or service-owned instance enums.

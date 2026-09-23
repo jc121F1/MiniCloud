@@ -2,6 +2,7 @@ package jc121f1.service.auth;
 
 import jc121f1.annotations.MiniCloudTest;
 import jc121f1.common.PasswordUtil;
+import jc121f1.dagger.AuthorizationCatalogModule;
 import jc121f1.model.auth.api.request.CreateUserRequest;
 import jc121f1.model.auth.api.request.DeleteUserRequest;
 import jc121f1.model.auth.api.request.GenerateCredentialRequest;
@@ -12,6 +13,9 @@ import jc121f1.model.auth.dao.AuthenticatedSession;
 import jc121f1.model.auth.dao.Credential;
 import jc121f1.model.auth.dao.Session;
 import jc121f1.model.auth.dao.User;
+import jc121f1.model.authz.Policy;
+import jc121f1.model.authz.PolicyDocument;
+import jc121f1.model.authz.PrincipalReference;
 import jc121f1.model.authz.ResourceReference;
 import jc121f1.model.authz.ServiceId;
 import jc121f1.services.auth.AuthService;
@@ -22,9 +26,15 @@ import jc121f1.services.auth.store.AccountStore;
 import jc121f1.services.auth.store.CredentialStore;
 import jc121f1.services.auth.store.SessionStore;
 import jc121f1.services.auth.store.UserStore;
+import jc121f1.services.authz.AuthorizationRules;
 import jc121f1.services.authz.AuthorizationService;
+import jc121f1.services.authz.AuthorizationServiceImpl;
+import jc121f1.services.authz.PolicyValidator;
+import jc121f1.services.authz.audit.AuditedAuthorizationService;
+import jc121f1.services.authz.audit.AuthorizationAudit;
 import jc121f1.services.authz.exceptions.AuthorizationDeniedException;
 import jc121f1.services.authz.exceptions.AuthorizationStoreException;
+import jc121f1.services.authz.store.PolicyStore;
 import jc121f1.services.instance.exceptions.UnauthorizedException;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,6 +46,7 @@ import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
@@ -51,6 +62,7 @@ class AuthServiceAuthorizationTest {
     @Mock private CredentialStore credentials;
     @Mock private SessionStore sessions;
     @Mock private AuthorizationService authorization;
+    @Mock private PolicyStore policies;
     private AuthService service;
 
     @BeforeEach
@@ -137,6 +149,96 @@ class AuthServiceAuthorizationTest {
         Assertions.assertThatThrownBy(() -> service.deleteUser(CALLER,
                 new DeleteUserRequest("u-target", null))).isInstanceOf(AuthorizationStoreException.class);
         Mockito.verify(users, Mockito.never()).delete(Mockito.any());
+    }
+
+    @Test
+    void real_evaluator_allows_owner_read_but_enforces_explicit_deny_and_owner_protection() {
+        useRealAuthorization("u-target");
+        Mockito.when(users.get("u-target")).thenReturn(CompletableFuture.completedFuture(Optional.of(TARGET)));
+        Mockito.when(users.get("u-target", true)).thenReturn(CompletableFuture.completedFuture(Optional.of(TARGET)));
+        AuthenticatedSession owner = new AuthenticatedSession("a-2", "u-target", Session.SubjectType.USER);
+        Assertions.assertThat(service.getUser(owner, new GetUserRequest(null, "u-target"))).isEqualTo(TARGET);
+
+        PrincipalReference ownerReference = new PrincipalReference("a-2", "u-target", Session.SubjectType.USER);
+        Mockito.doReturn(CompletableFuture.completedFuture(List.of(
+                policy("p-deny", "auth:DescribeUser", "mc:auth:a-2:user/u-target",
+                        PolicyDocument.Effect.DENY)))).when(policies).listAttached(ownerReference);
+        Assertions.assertThatThrownBy(() -> service.getUser(owner, new GetUserRequest(null, "u-target")))
+                .isInstanceOf(AuthorizationDeniedException.class);
+        Assertions.assertThatThrownBy(() -> service.deleteUser(owner, new DeleteUserRequest("u-target", null)))
+                .isInstanceOf(AuthorizationDeniedException.class);
+        Mockito.verify(users, Mockito.never()).delete(Mockito.any());
+    }
+
+    @Test
+    void real_evaluator_requires_credential_and_creator_grants_before_revocation() {
+        useRealAuthorization("u-owner");
+        Mockito.when(users.get("u-target", true)).thenReturn(CompletableFuture.completedFuture(Optional.of(TARGET)));
+        Credential credential = Credential.builder().credentialId("cre-2").accountId("a-2")
+                .createdByUserId("u-target").build();
+        Mockito.when(credentials.get("cre-2", true))
+                .thenReturn(CompletableFuture.completedFuture(Optional.of(credential)));
+        Mockito.when(credentials.get("cre-2"))
+                .thenReturn(CompletableFuture.completedFuture(Optional.of(credential)));
+        AuthenticatedSession credentialCaller = new AuthenticatedSession("a-2", "cre-2", Session.SubjectType.CREDENTIAL);
+        InvalidateCredentialRequest request = new InvalidateCredentialRequest("cre-2");
+
+        Assertions.assertThatThrownBy(() -> service.invalidateCredential(credentialCaller, request))
+                .isInstanceOf(AuthorizationDeniedException.class);
+        Policy grant = policy("p-revoke", "auth:InvalidateCredential", "mc:auth:a-2:credential/cre-2",
+                PolicyDocument.Effect.ALLOW);
+        Mockito.doReturn(CompletableFuture.completedFuture(List.of(grant))).when(policies)
+                .listAttached(new PrincipalReference("a-2", "cre-2", Session.SubjectType.CREDENTIAL));
+        Assertions.assertThatThrownBy(() -> service.invalidateCredential(credentialCaller, request))
+                .isInstanceOf(AuthorizationDeniedException.class);
+        Mockito.doReturn(CompletableFuture.completedFuture(List.of(grant))).when(policies)
+                .listAttached(new PrincipalReference("a-2", "u-target", Session.SubjectType.USER));
+        Mockito.when(credentials.update(Mockito.eq(credential), Mockito.any()))
+                .thenAnswer(call -> CompletableFuture.completedFuture(call.getArgument(1)));
+        Assertions.assertThatCode(() -> service.invalidateCredential(credentialCaller, request)).doesNotThrowAnyException();
+        Mockito.verify(credentials).update(Mockito.eq(credential), Mockito.argThat(Credential::revoked));
+    }
+
+    @Test
+    void password_authenticated_member_needs_a_current_grant_to_generate_credentials() {
+        useRealAuthorization("u-owner");
+        Mockito.when(users.findByEmail(TARGET.email())).thenReturn(CompletableFuture.completedFuture(TARGET));
+        Mockito.when(users.get("u-target", true)).thenReturn(CompletableFuture.completedFuture(Optional.of(TARGET)));
+        Mockito.when(accounts.get("a-2")).thenReturn(CompletableFuture.completedFuture(Optional.of(
+                Account.builder().accountId("a-2").status(Account.AccountStatus.ACTIVE).build())));
+        GenerateCredentialRequest request = new GenerateCredentialRequest(TARGET.email(), PASSWORD);
+
+        Assertions.assertThatThrownBy(() -> service.generateCredential(request))
+                .isInstanceOf(AuthorizationDeniedException.class);
+        Mockito.verify(credentials, Mockito.never()).create(Mockito.any());
+
+        Mockito.doReturn(CompletableFuture.completedFuture(List.of(policy("p-generate",
+                "auth:GenerateCredential", "mc:auth:a-2:account/a-2", PolicyDocument.Effect.ALLOW))))
+                .when(policies).listAttached(new PrincipalReference("a-2", "u-target", Session.SubjectType.USER));
+        Mockito.when(credentials.create(Mockito.any())).thenAnswer(call ->
+                CompletableFuture.completedFuture(call.getArgument(0)));
+        Assertions.assertThat(service.generateCredential(request).accountId()).isEqualTo("a-2");
+        Mockito.verify(credentials).create(Mockito.argThat(created ->
+                "u-target".equals(created.createdByUserId()) && "a-2".equals(created.accountId())));
+    }
+
+    private void useRealAuthorization(String ownerId) {
+        Mockito.when(accounts.get("a-2", true)).thenReturn(CompletableFuture.completedFuture(Optional.of(
+                Account.builder().accountId("a-2").ownerId(ownerId).status(Account.AccountStatus.ACTIVE).build())));
+        Mockito.when(policies.listAttached(Mockito.any()))
+                .thenReturn(CompletableFuture.completedFuture(List.of()));
+        var registry = AuthorizationCatalogModule.actionRegistry();
+        var evaluator = new AuthorizationServiceImpl(accounts, users, credentials, policies, registry,
+                new PolicyValidator(registry), new AuthorizationRules());
+        var audited = new AuditedAuthorizationService(evaluator,
+                new AuthorizationAudit(Clock.systemUTC(), event -> { }));
+        service = new AuthServiceImpl(accounts, users, Clock.systemUTC(), sessions, credentials,
+                new SecureRandom(), audited);
+    }
+
+    private static Policy policy(String id, String action, String resource, PolicyDocument.Effect effect) {
+        return new Policy(id, "a-2", 1, new PolicyDocument(1,
+                List.of(new PolicyDocument.Statement(effect, List.of(action), List.of(resource)))));
     }
 
     private static ResourceReference resource(String account, AuthResourceType type, String id) {
