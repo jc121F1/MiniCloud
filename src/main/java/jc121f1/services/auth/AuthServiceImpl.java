@@ -1,15 +1,8 @@
 package jc121f1.services.auth;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-import jc121f1.model.auth.AuthenticateRequest;
-import jc121f1.model.auth.dao.Account;
-import jc121f1.model.auth.dao.AuthenticatedSession;
-import jc121f1.model.auth.dao.Credential;
-import jc121f1.model.auth.dao.PublicFacingCredential;
-import jc121f1.model.auth.dao.Session;
-import jc121f1.model.auth.dao.User;
-import jc121f1.services.instance.exceptions.UnauthorizedException;
 import jc121f1.common.PasswordUtil;
+import jc121f1.model.auth.AuthenticateRequest;
 import jc121f1.model.auth.api.request.CreateUserRequest;
 import jc121f1.model.auth.api.request.DeleteUserRequest;
 import jc121f1.model.auth.api.request.ExchangeServiceCredentialRequest;
@@ -17,11 +10,23 @@ import jc121f1.model.auth.api.request.GenerateCredentialRequest;
 import jc121f1.model.auth.api.request.GetUserRequest;
 import jc121f1.model.auth.api.request.InvalidateCredentialRequest;
 import jc121f1.model.auth.api.request.LoginRequest;
+import jc121f1.model.auth.dao.Account;
+import jc121f1.model.auth.dao.AuthenticatedSession;
+import jc121f1.model.auth.dao.Credential;
+import jc121f1.model.auth.dao.PublicFacingCredential;
+import jc121f1.model.auth.dao.Session;
+import jc121f1.model.auth.dao.User;
+import jc121f1.model.authz.ResourceReference;
+import jc121f1.model.authz.ServiceId;
+import jc121f1.services.auth.authorization.AuthAction;
+import jc121f1.services.auth.authorization.AuthResourceType;
+import jc121f1.services.authz.AuthorizationService;
 import jc121f1.services.auth.store.AccountStore;
 import jc121f1.services.auth.store.CredentialStore;
 import jc121f1.services.auth.store.SessionStore;
 import jc121f1.services.auth.store.UserStore;
 import jc121f1.services.instance.exceptions.ResourceNotFoundException;
+import jc121f1.services.instance.exceptions.UnauthorizedException;
 import jc121f1.services.instance.exceptions.ValidationException;
 
 import javax.inject.Inject;
@@ -32,6 +37,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalAmount;
 import java.util.Base64;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -46,6 +52,7 @@ public class AuthServiceImpl implements AuthService {
     private final SessionStore sessionStore;
     private final CredentialStore credentialStore;
     private final SecureRandom secureRandom;
+    private final AuthorizationService authorizationService;
 
     @Inject
     @SuppressFBWarnings(
@@ -57,17 +64,36 @@ public class AuthServiceImpl implements AuthService {
                     UserStore userStore,
                     Clock clock,
                     SessionStore sessionStore, CredentialStore credentialStore,
-                    SecureRandom secureRandom) {
+                    SecureRandom secureRandom, AuthorizationService authorizationService) {
         this.accountStore = accountStore;
         this.userStore = userStore;
         this.clock = clock;
         this.sessionStore = sessionStore;
         this.credentialStore = credentialStore;
         this.secureRandom = secureRandom;
+        this.authorizationService = authorizationService;
     }
 
     @Override
     public User createUser(CreateUserRequest createUserRequest) {
+        requireRequest(createUserRequest);
+        if (createUserRequest.accountId() != null) {
+            throw new UnauthorizedException("Authentication required for an existing account");
+        }
+        return createUserInternal(createUserRequest);
+    }
+
+    @Override
+    public User createUser(AuthenticatedSession caller, CreateUserRequest createUserRequest) {
+        Objects.requireNonNull(caller, "caller");
+        requireRequest(createUserRequest);
+        requireText(createUserRequest.accountId(), "accountId");
+        authorizationService.authorize(caller, AuthAction.CREATE_USER,
+                resource(createUserRequest.accountId(), AuthResourceType.ACCOUNT, createUserRequest.accountId()));
+        return createUserInternal(createUserRequest);
+    }
+
+    private User createUserInternal(CreateUserRequest createUserRequest) {
         requireRequest(createUserRequest);
         requireText(createUserRequest.userEmail(), "email");
         requireText(createUserRequest.password(), "password");
@@ -126,10 +152,14 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
-    public User getUser(GetUserRequest getUserRequest) {
+    public User getUser(AuthenticatedSession caller, GetUserRequest getUserRequest) {
+        Objects.requireNonNull(caller, "caller");
         requireRequest(getUserRequest);
         String identifier = Optional.ofNullable(getUserRequest.userId()).orElse(getUserRequest.email());
-        return getUser(identifier);
+        User user = getUser(identifier);
+        authorizationService.authorize(caller, AuthAction.DESCRIBE_USER,
+                resource(user.accountId(), AuthResourceType.USER, user.userId()));
+        return user;
     }
 
     private User getUser(String identifier) {
@@ -140,10 +170,13 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
-    public User deleteUser(DeleteUserRequest deleteUserRequest) {
+    public User deleteUser(AuthenticatedSession caller, DeleteUserRequest deleteUserRequest) {
+        Objects.requireNonNull(caller, "caller");
         requireRequest(deleteUserRequest);
         String identifier = Optional.ofNullable(deleteUserRequest.userId()).orElse(deleteUserRequest.email());
         User user = getUser(identifier);
+        authorizationService.authorize(caller, AuthAction.DELETE_USER,
+                resource(user.accountId(), AuthResourceType.USER, user.userId()));
         userStore.delete(user).join();
         return user;
     }
@@ -218,6 +251,10 @@ public class AuthServiceImpl implements AuthService {
         User user = maybeUser.get();
         requireActiveAccount(user.accountId());
 
+        authorizationService.authorize(new AuthenticatedSession(user.accountId(), user.userId(),
+                        Session.SubjectType.USER), AuthAction.GENERATE_CREDENTIAL,
+                resource(user.accountId(), AuthResourceType.ACCOUNT, user.accountId()));
+
         byte[] secretBytes = new byte[SECRET_BYTES];
         secureRandom.nextBytes(secretBytes);
         String plaintextSecret = Base64.getUrlEncoder().withoutPadding().encodeToString(secretBytes);
@@ -270,7 +307,8 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
-    public void invalidateCredential(InvalidateCredentialRequest request) {
+    public void invalidateCredential(AuthenticatedSession caller, InvalidateCredentialRequest request) {
+        Objects.requireNonNull(caller, "caller");
         requireRequest(request);
         requireText(request.credentialId(), "credentialId");
         Optional<Credential> maybeCredential = credentialStore.get(request.credentialId()).join();
@@ -279,8 +317,13 @@ public class AuthServiceImpl implements AuthService {
         }
 
         Credential credential = maybeCredential.get();
-
+        authorizationService.authorize(caller, AuthAction.INVALIDATE_CREDENTIAL,
+                resource(credential.accountId(), AuthResourceType.CREDENTIAL, credential.credentialId()));
         credentialStore.update(credential, credential.toBuilder().revoked(true).build()).join();
+    }
+
+    private static ResourceReference resource(String accountId, AuthResourceType type, String id) {
+        return ResourceReference.of(ServiceId.AUTH, accountId, type, id);
     }
 
     private String generateOpaqueToken() {

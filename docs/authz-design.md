@@ -1,6 +1,6 @@
 # Authorization design
 
-Status: Authz foundation checkpoints 1–5 and instance integration checkpoints 1–2 were verified by user-run tests and checks. The user confirmed the final instance integration tests pass. Checkstyle and SpotBugs have not been reported for the final test-only edits.
+Status: Authz foundation checkpoints 1–5 and instance integration checkpoints 1–2 were verified by user-run tests and checks. The user confirmed the final instance integration tests pass. Checkstyle and SpotBugs have not been reported for the final test-only edits. Auth identity integration is implemented but awaits the user's testing checkpoint results.
 
 ## Scope and existing foundation
 
@@ -48,7 +48,7 @@ Action patterns permit an exact action or `service:*`. Resource patterns permit 
 
 The Java contract is defined in `services.authz.AuthorizationService`: the principal is the existing `AuthenticatedSession` and the target is a `ResourceReference`. Local callers pass a service-owned `ActionDefinition`; its canonical string identifies the action for transport and persistence. `evaluate` returns `AuthorizationDecision`; `authorize` returns normally only on allow and throws `AuthorizationDeniedException` on denial. Storage failures propagate separately.
 
-`AuthorizationServiceImpl` uses the existing identity-store interfaces and `PolicyStore`, with no DynamoDB or HTTP dependencies. It rejects malformed requests and cross-account targets before reads, then requests strongly consistent account/user/credential reads via `GenericStore.get(id, true)`. Every evaluation loads current policies; stored documents are revalidated and corrupt/incompatible policy data fails as a storage error. Decisions include deduplicated, sorted matched policy IDs/revisions from the credential and creator where applicable. The evaluator also rejects deletion of the current account owner. Instance routes now enforce through this evaluator; auth routes remain a later integration.
+`AuthorizationServiceImpl` uses the existing identity-store interfaces and `PolicyStore`, with no DynamoDB or HTTP dependencies. It rejects malformed requests and cross-account targets before reads, then requests strongly consistent account/user/credential reads via `GenericStore.get(id, true)`. Every evaluation loads current policies; stored documents are revalidated and corrupt/incompatible policy data fails as a storage error. Decisions include deduplicated, sorted matched policy IDs/revisions from the credential and creator where applicable. The evaluator also rejects deletion of the current account owner. Instance and protected auth routes now enforce through this evaluator.
 
 Evaluate in this order:
 
@@ -131,6 +131,14 @@ Public create, list, describe, start, stop, and delete calls enforce their corre
 The list operation requires `instance:List` on the caller's account resource. Its result includes only persisted instances owned by that account for which the caller also has `instance:Describe` on the concrete instance resource. A denied describe decision excludes that row; a storage failure aborts the list instead of returning a partial success. Thus an account-scoped list grant alone does not reveal instances covered by a per-instance deny or lacking a describe grant.
 
 Integration checkpoint 1 added the persisted, client-hidden ownership field and tests its storage mapping and JSON behavior. The user confirmed its targeted test and Checkstyle/SpotBugs checks passed. Integration checkpoint 2 passes the authenticated session into every instance service call, enforces all six actions inside the service, and applies the list rule above. HTTP handlers use `AuthContext` after authentication; missing/invalid authentication remains 401 and authorization denial maps to 403. The user confirmed its tests and checks passed after the HTTP test fixture correction. Integration checkpoint 3 exercises the real audited evaluator through the instance service and HTTP boundary, including current policy changes, credential intersection, owner behavior, account isolation, list filtering, and storage errors. An initial run exposed a test fixture restubbing error; it was corrected and the HTTP coverage expanded. The user confirmed the final tests pass. Final Checkstyle and SpotBugs results have not been reported.
+
+## Auth identity integration checkpoint
+
+`AuthService` now requires an authenticated caller for adding a user to an existing account, describing or deleting a user, and invalidating a credential. It resolves user and credential ownership from the identity stores and enforces the corresponding `AuthAction` through the injected audited `AuthorizationService` before returning protected data or mutating storage. The authorization evaluator supplies same-account isolation, explicit-deny precedence, credential restrictions, and owner-deletion protection. Auth HTTP middleware establishes `AuthContext`; handlers pass that trusted session to the service. Authentication failure remains 401 and permission denial maps to 403.
+
+`POST /users/create` with no `accountId` is new-account signup and needs no existing session. The same path with `accountId` adds a user to an existing account and requires a bearer session with `auth:CreateUser` on that account. Direct service callers must use the caller overload for existing-account creation; the signup method rejects a supplied `accountId`. Login and credential exchange remain authentication operations. Credential generation remains password authenticated without a bearer session: after password verification, the service derives the user principal from the stored matching user and enforces `auth:GenerateCredential` on that account before creating the credential. Submitted identifiers never establish the acting principal.
+
+This checkpoint has not yet been verified. The user-run tests and static checks requested below must be reported before further work or verified-result documentation is added.
 
 ## Future service decomposition
 

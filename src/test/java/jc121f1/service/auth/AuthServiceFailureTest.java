@@ -10,10 +10,13 @@ import jc121f1.model.auth.api.request.GetUserRequest;
 import jc121f1.model.auth.api.request.InvalidateCredentialRequest;
 import jc121f1.model.auth.api.request.LoginRequest;
 import jc121f1.model.auth.dao.Account;
+import jc121f1.model.auth.dao.AuthenticatedSession;
+import jc121f1.model.auth.dao.Session;
 import jc121f1.model.auth.dao.Credential;
 import jc121f1.model.auth.dao.User;
 import jc121f1.services.auth.AuthService;
 import jc121f1.services.auth.AuthServiceImpl;
+import jc121f1.services.authz.AuthorizationService;
 import jc121f1.services.auth.store.AccountStore;
 import jc121f1.services.auth.store.CredentialStore;
 import jc121f1.services.auth.store.SessionStore;
@@ -40,6 +43,8 @@ class AuthServiceFailureTest {
     private static final Instant NOW = Instant.parse("2026-01-01T00:00:00Z");
     private static final User USER = User.builder().userId("u-1").accountId("a-1")
             .email(EMAIL).passwordHash(HASH).build();
+    private static final AuthenticatedSession CALLER =
+            new AuthenticatedSession("a-1", "u-1", Session.SubjectType.USER);
     private static final Credential CREDENTIAL = Credential.builder().credentialId("cre-1").accountId("a-1")
             .secretHash(HASH).createdAt(NOW.minusSeconds(60)).build();
 
@@ -48,12 +53,14 @@ class AuthServiceFailureTest {
     @Mock private CredentialStore credentials;
     @Mock private SessionStore sessions;
     @Mock private SecureRandom random;
+    @Mock private AuthorizationService authorizationService;
     private AuthService service;
     private final RuntimeException failure = new IllegalStateException("store unavailable");
 
     @BeforeEach
     void setUp() {
-        service = new AuthServiceImpl(accounts, users, Clock.fixed(NOW, ZoneOffset.UTC), sessions, credentials, random);
+        service = new AuthServiceImpl(accounts, users, Clock.fixed(NOW, ZoneOffset.UTC), sessions, credentials,
+                random, authorizationService);
     }
 
     private void activeAccount() {
@@ -83,7 +90,7 @@ class AuthServiceFailureTest {
     @Test
     void failed_account_lookup_never_creates_a_user() {
         Mockito.when(accounts.get("a-1")).thenReturn(CompletableFuture.failedFuture(failure));
-        Assertions.assertThatThrownBy(() -> service.createUser(new CreateUserRequest(EMAIL, PASSWORD, "a-1")))
+        Assertions.assertThatThrownBy(() -> service.createUser(CALLER, new CreateUserRequest(EMAIL, PASSWORD, "a-1")))
                 .hasCause(failure);
         Mockito.verifyNoInteractions(users);
         Mockito.verify(accounts, Mockito.never()).delete(Mockito.any());
@@ -92,8 +99,8 @@ class AuthServiceFailureTest {
     @Test
     void failed_user_lookup_does_not_fall_back_to_email_or_delete() {
         Mockito.when(users.get("u-1")).thenReturn(CompletableFuture.failedFuture(failure));
-        Assertions.assertThatThrownBy(() -> service.getUser(new GetUserRequest(null, "u-1"))).hasCause(failure);
-        Assertions.assertThatThrownBy(() -> service.deleteUser(new DeleteUserRequest("u-1", null))).hasCause(failure);
+        Assertions.assertThatThrownBy(() -> service.getUser(CALLER, new GetUserRequest(null, "u-1"))).hasCause(failure);
+        Assertions.assertThatThrownBy(() -> service.deleteUser(CALLER, new DeleteUserRequest("u-1", null))).hasCause(failure);
         Mockito.verify(users, Mockito.never()).findByEmail(Mockito.anyString());
         Mockito.verify(users, Mockito.never()).delete(Mockito.any());
     }
@@ -102,14 +109,14 @@ class AuthServiceFailureTest {
     void failed_email_lookup_is_not_reported_as_a_missing_user() {
         Mockito.when(users.get(EMAIL)).thenReturn(CompletableFuture.completedFuture(Optional.empty()));
         Mockito.when(users.findByEmail(EMAIL)).thenReturn(CompletableFuture.failedFuture(failure));
-        Assertions.assertThatThrownBy(() -> service.getUser(new GetUserRequest(EMAIL, null))).hasCause(failure);
+        Assertions.assertThatThrownBy(() -> service.getUser(CALLER, new GetUserRequest(EMAIL, null))).hasCause(failure);
     }
 
     @Test
     void failed_deletion_is_not_reported_as_success() {
         Mockito.when(users.get("u-1")).thenReturn(CompletableFuture.completedFuture(Optional.of(USER)));
         Mockito.when(users.delete(USER)).thenReturn(CompletableFuture.failedFuture(failure));
-        Assertions.assertThatThrownBy(() -> service.deleteUser(new DeleteUserRequest("u-1", null))).hasCause(failure);
+        Assertions.assertThatThrownBy(() -> service.deleteUser(CALLER, new DeleteUserRequest("u-1", null))).hasCause(failure);
         Mockito.verifyNoInteractions(accounts, credentials, sessions);
     }
 
@@ -159,7 +166,7 @@ class AuthServiceFailureTest {
         Mockito.when(credentials.get("cre-1")).thenReturn(CompletableFuture.failedFuture(failure));
         Assertions.assertThatThrownBy(() -> service.exchangeServiceCredential(new ExchangeServiceCredentialRequest("cre-1", PASSWORD)))
                 .hasCause(failure);
-        Assertions.assertThatThrownBy(() -> service.invalidateCredential(new InvalidateCredentialRequest("cre-1"))).hasCause(failure);
+        Assertions.assertThatThrownBy(() -> service.invalidateCredential(CALLER, new InvalidateCredentialRequest("cre-1"))).hasCause(failure);
         Mockito.verify(credentials, Mockito.never()).update(Mockito.any(), Mockito.any());
         Mockito.verifyNoInteractions(accounts, sessions, random);
     }
@@ -192,7 +199,7 @@ class AuthServiceFailureTest {
     void failed_revocation_is_not_reported_as_success() {
         Mockito.when(credentials.get("cre-1")).thenReturn(CompletableFuture.completedFuture(Optional.of(CREDENTIAL)));
         Mockito.when(credentials.update(Mockito.eq(CREDENTIAL), Mockito.any())).thenReturn(CompletableFuture.failedFuture(failure));
-        Assertions.assertThatThrownBy(() -> service.invalidateCredential(new InvalidateCredentialRequest("cre-1"))).hasCause(failure);
+        Assertions.assertThatThrownBy(() -> service.invalidateCredential(CALLER, new InvalidateCredentialRequest("cre-1"))).hasCause(failure);
         Mockito.verifyNoInteractions(sessions, random);
     }
 }

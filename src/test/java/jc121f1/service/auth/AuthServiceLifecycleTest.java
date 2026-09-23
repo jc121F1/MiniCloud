@@ -11,12 +11,14 @@ import jc121f1.model.auth.api.request.GetUserRequest;
 import jc121f1.model.auth.api.request.InvalidateCredentialRequest;
 import jc121f1.model.auth.api.request.LoginRequest;
 import jc121f1.model.auth.dao.Account;
+import jc121f1.model.auth.dao.AuthenticatedSession;
 import jc121f1.model.auth.dao.Credential;
 import jc121f1.model.auth.dao.PublicFacingCredential;
 import jc121f1.model.auth.dao.Session;
 import jc121f1.model.auth.dao.User;
 import jc121f1.services.auth.AuthService;
 import jc121f1.services.auth.AuthServiceImpl;
+import jc121f1.services.authz.AuthorizationService;
 import jc121f1.services.auth.store.AccountStore;
 import jc121f1.services.auth.store.CredentialStore;
 import jc121f1.services.auth.store.SessionStore;
@@ -25,6 +27,7 @@ import jc121f1.services.instance.exceptions.ResourceNotFoundException;
 import jc121f1.services.instance.exceptions.UnauthorizedException;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -49,8 +52,13 @@ class AuthServiceLifecycleTest {
     private final Users users = new Users();
     private final Credentials credentials = new Credentials();
     private final Sessions sessions = new Sessions();
+    private final AuthorizationService authorizationService = Mockito.mock(AuthorizationService.class);
     private final AuthService service = new AuthServiceImpl(accounts, users, Clock.fixed(NOW, ZoneOffset.UTC),
-            sessions, credentials, new SecureRandom());
+            sessions, credentials, new SecureRandom(), authorizationService);
+
+    private static AuthenticatedSession caller(User user) {
+        return new AuthenticatedSession(user.accountId(), user.userId(), Session.SubjectType.USER);
+    }
 
     private User createOwner() {
         return service.createUser(new CreateUserRequest(EMAIL, PASSWORD, null));
@@ -67,8 +75,8 @@ class AuthServiceLifecycleTest {
         Assertions.assertThat(session.subjectType()).isEqualTo(Session.SubjectType.USER);
         Assertions.assertThat(session.expiresAt()).isEqualTo(NOW.plusSeconds(3600));
         Assertions.assertThat(sessions.items.get(session.token())).isEqualTo(session);
-        Assertions.assertThat(service.getUser(new GetUserRequest(EMAIL, null))).isEqualTo(owner);
-        Assertions.assertThat(service.getUser(new GetUserRequest(null, owner.userId()))).isEqualTo(owner);
+        Assertions.assertThat(service.getUser(caller(owner), new GetUserRequest(EMAIL, null))).isEqualTo(owner);
+        Assertions.assertThat(service.getUser(caller(owner), new GetUserRequest(null, owner.userId()))).isEqualTo(owner);
         Assertions.assertThatThrownBy(() -> service.login(new LoginRequest(EMAIL, "wrong password")))
                 .isInstanceOf(UnauthorizedException.class);
         Assertions.assertThat(sessions.items).hasSize(1);
@@ -99,8 +107,8 @@ class AuthServiceLifecycleTest {
         Assertions.assertThatThrownBy(() -> service.exchangeServiceCredential(
                 new ExchangeServiceCredentialRequest(first.credentialId(), second.secret())))
                 .isInstanceOf(UnauthorizedException.class);
-        service.invalidateCredential(new InvalidateCredentialRequest(first.credentialId()));
-        service.invalidateCredential(new InvalidateCredentialRequest(first.credentialId()));
+        service.invalidateCredential(caller(owner), new InvalidateCredentialRequest(first.credentialId()));
+        service.invalidateCredential(caller(owner), new InvalidateCredentialRequest(first.credentialId()));
         Assertions.assertThat(credentials.items.get(first.credentialId()).revoked()).isTrue();
         Assertions.assertThatThrownBy(() -> service.exchangeServiceCredential(
                 new ExchangeServiceCredentialRequest(first.credentialId(), first.secret())))
@@ -114,13 +122,13 @@ class AuthServiceLifecycleTest {
     void deleting_a_member_prevents_future_password_authentication_without_deleting_the_account() {
         User owner = createOwner();
         String memberEmail = "member@example.com";
-        User member = service.createUser(new CreateUserRequest(memberEmail, PASSWORD, owner.accountId()));
+        User member = service.createUser(caller(owner), new CreateUserRequest(memberEmail, PASSWORD, owner.accountId()));
         Session login = service.login(new LoginRequest(memberEmail, PASSWORD));
         Assertions.assertThat(login.accountId()).isEqualTo(owner.accountId());
         Assertions.assertThat(accounts.items).hasSize(1);
 
-        Assertions.assertThat(service.deleteUser(new DeleteUserRequest(member.userId(), EMAIL))).isEqualTo(member);
-        Assertions.assertThatThrownBy(() -> service.getUser(new GetUserRequest(null, member.userId())))
+        Assertions.assertThat(service.deleteUser(caller(owner), new DeleteUserRequest(member.userId(), EMAIL))).isEqualTo(member);
+        Assertions.assertThatThrownBy(() -> service.getUser(caller(owner), new GetUserRequest(null, member.userId())))
                 .isInstanceOf(ResourceNotFoundException.class);
         Assertions.assertThatThrownBy(() -> service.login(new LoginRequest(memberEmail, PASSWORD))).isInstanceOf(UnauthorizedException.class);
         Assertions.assertThatThrownBy(() -> service.generateCredential(

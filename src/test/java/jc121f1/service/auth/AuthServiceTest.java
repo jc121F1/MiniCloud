@@ -10,12 +10,14 @@ import jc121f1.model.auth.api.request.GetUserRequest;
 import jc121f1.model.auth.api.request.InvalidateCredentialRequest;
 import jc121f1.model.auth.api.request.LoginRequest;
 import jc121f1.model.auth.dao.Account;
+import jc121f1.model.auth.dao.AuthenticatedSession;
 import jc121f1.model.auth.dao.Credential;
 import jc121f1.model.auth.dao.PublicFacingCredential;
 import jc121f1.model.auth.dao.Session;
 import jc121f1.model.auth.dao.User;
 import jc121f1.services.auth.AuthService;
 import jc121f1.services.auth.AuthServiceImpl;
+import jc121f1.services.authz.AuthorizationService;
 import jc121f1.services.auth.store.AccountStore;
 import jc121f1.services.auth.store.CredentialStore;
 import jc121f1.services.auth.store.SessionStore;
@@ -47,6 +49,8 @@ public class AuthServiceTest {
     private static final String PASSWORD = "correct-horse-battery-staple";
     private static final String OTHER_PASSWORD = "wrong-password";
     private static final String ACCOUNT_ID = "a-existing";
+    private static final AuthenticatedSession CALLER =
+            new AuthenticatedSession(ACCOUNT_ID, "u-existing", Session.SubjectType.USER);
     private static final Instant NOW = Instant.parse("2026-01-01T00:00:00Z");
     private static final String PASSWORD_HASH = PasswordUtil.hash(PASSWORD.toCharArray());
 
@@ -58,6 +62,7 @@ public class AuthServiceTest {
     @Mock private AccountStore accountStore;
     @Mock private Clock clock;
     @Mock private SecureRandom secureRandom;
+    @Mock private AuthorizationService authorizationService;
 
     @Nested
     class Given_a_auth_service {
@@ -69,7 +74,7 @@ public class AuthServiceTest {
                     clock,
                     sessionStore,
                     credentialStore,
-                    secureRandom
+                    secureRandom, authorizationService
             );
         }
 
@@ -141,7 +146,7 @@ public class AuthServiceTest {
                 Mockito.when(accountStore.get(ACCOUNT_ID)).thenReturn(CompletableFuture.completedFuture(
                         Optional.of(Account.builder().accountId(ACCOUNT_ID).status(Account.AccountStatus.ACTIVE).build())));
 
-                User result = authService.createUser(new CreateUserRequest(EMAIL, PASSWORD, ACCOUNT_ID));
+                User result = authService.createUser(CALLER, new CreateUserRequest(EMAIL, PASSWORD, ACCOUNT_ID));
 
                 Assertions.assertThat(result.accountId()).isEqualTo(ACCOUNT_ID);
                 Mockito.verify(accountStore, Mockito.never()).create(Mockito.any());
@@ -152,7 +157,7 @@ public class AuthServiceTest {
             @Test
             void rejects_a_missing_account() {
                 Mockito.when(accountStore.get(ACCOUNT_ID)).thenReturn(CompletableFuture.completedFuture(Optional.empty()));
-                Assertions.assertThatThrownBy(() -> authService.createUser(
+                Assertions.assertThatThrownBy(() -> authService.createUser(CALLER,
                         new CreateUserRequest(EMAIL, PASSWORD, ACCOUNT_ID)))
                         .isInstanceOf(ResourceNotFoundException.class);
                 Mockito.verifyNoInteractions(userStore);
@@ -164,7 +169,7 @@ public class AuthServiceTest {
                         Account.AccountStatus.SUSPENDED, Account.AccountStatus.CLOSED}) {
                     Mockito.when(accountStore.get(ACCOUNT_ID)).thenReturn(CompletableFuture.completedFuture(
                             Optional.of(Account.builder().accountId(ACCOUNT_ID).status(status).build())));
-                    Assertions.assertThatThrownBy(() -> authService.createUser(
+                    Assertions.assertThatThrownBy(() -> authService.createUser(CALLER,
                             new CreateUserRequest(EMAIL, PASSWORD, ACCOUNT_ID)))
                             .isInstanceOf(ValidationException.class);
                 }
@@ -207,7 +212,7 @@ public class AuthServiceTest {
                         Optional.of(Account.builder().accountId(ACCOUNT_ID).status(Account.AccountStatus.ACTIVE).build())));
                 RuntimeException failure = new IllegalStateException("user creation failed");
                 Mockito.when(userStore.create(Mockito.any())).thenReturn(CompletableFuture.failedFuture(failure));
-                Assertions.assertThatThrownBy(() -> authService.createUser(
+                Assertions.assertThatThrownBy(() -> authService.createUser(CALLER,
                         new CreateUserRequest(EMAIL, PASSWORD, ACCOUNT_ID))).hasCause(failure);
                 Mockito.verify(accountStore, Mockito.never()).delete(Mockito.any());
             }
@@ -219,7 +224,7 @@ public class AuthServiceTest {
             void looks_up_by_id_in_preference_to_email() {
                 User expected = user();
                 Mockito.when(userStore.get(expected.userId())).thenReturn(CompletableFuture.completedFuture(Optional.of(expected)));
-                Assertions.assertThat(authService.getUser(new GetUserRequest(EMAIL, expected.userId()))).isEqualTo(expected);
+                Assertions.assertThat(authService.getUser(CALLER, new GetUserRequest(EMAIL, expected.userId()))).isEqualTo(expected);
                 Mockito.verify(userStore, Mockito.never()).findByEmail(Mockito.anyString());
             }
 
@@ -227,14 +232,14 @@ public class AuthServiceTest {
             void finds_a_user_by_email() {
                 Mockito.when(userStore.get(EMAIL)).thenReturn(CompletableFuture.completedFuture(Optional.empty()));
                 Mockito.when(userStore.findByEmail(EMAIL)).thenReturn(CompletableFuture.completedFuture(user()));
-                Assertions.assertThat(authService.getUser(new GetUserRequest(EMAIL, null))).isEqualTo(user());
+                Assertions.assertThat(authService.getUser(CALLER, new GetUserRequest(EMAIL, null))).isEqualTo(user());
             }
 
             @Test
             void reports_a_missing_user() {
                 Mockito.when(userStore.get(EMAIL)).thenReturn(CompletableFuture.completedFuture(Optional.empty()));
                 Mockito.when(userStore.findByEmail(EMAIL)).thenReturn(CompletableFuture.completedFuture(null));
-                Assertions.assertThatThrownBy(() -> authService.getUser(new GetUserRequest(EMAIL, null)))
+                Assertions.assertThatThrownBy(() -> authService.getUser(CALLER, new GetUserRequest(EMAIL, null)))
                         .isInstanceOf(ResourceNotFoundException.class);
             }
 
@@ -244,7 +249,7 @@ public class AuthServiceTest {
                 Mockito.when(userStore.get(EMAIL)).thenReturn(CompletableFuture.completedFuture(Optional.empty()));
                 Mockito.when(userStore.findByEmail(EMAIL)).thenReturn(CompletableFuture.completedFuture(expected));
                 Mockito.when(userStore.delete(expected)).thenReturn(CompletableFuture.completedFuture(null));
-                Assertions.assertThat(authService.deleteUser(new DeleteUserRequest(null, EMAIL))).isEqualTo(expected);
+                Assertions.assertThat(authService.deleteUser(CALLER, new DeleteUserRequest(null, EMAIL))).isEqualTo(expected);
                 Mockito.verify(userStore).delete(expected);
             }
 
@@ -252,7 +257,7 @@ public class AuthServiceTest {
             void does_not_delete_a_missing_user() {
                 Mockito.when(userStore.get("missing")).thenReturn(CompletableFuture.completedFuture(Optional.empty()));
                 Mockito.when(userStore.findByEmail("missing")).thenReturn(CompletableFuture.completedFuture(null));
-                Assertions.assertThatThrownBy(() -> authService.deleteUser(new DeleteUserRequest("missing", null)))
+                Assertions.assertThatThrownBy(() -> authService.deleteUser(CALLER, new DeleteUserRequest("missing", null)))
                         .isInstanceOf(ResourceNotFoundException.class);
                 Mockito.verify(userStore, Mockito.never()).delete(Mockito.any());
             }
@@ -407,14 +412,14 @@ public class AuthServiceTest {
                 Mockito.when(credentialStore.get(existing.credentialId())).thenReturn(CompletableFuture.completedFuture(Optional.of(existing)));
                 Mockito.when(credentialStore.update(Mockito.eq(existing), Mockito.any()))
                         .thenAnswer(invocation -> CompletableFuture.completedFuture(invocation.getArgument(1)));
-                authService.invalidateCredential(new InvalidateCredentialRequest(existing.credentialId()));
+                authService.invalidateCredential(CALLER, new InvalidateCredentialRequest(existing.credentialId()));
                 Mockito.verify(credentialStore).update(existing, existing.toBuilder().revoked(true).build());
             }
 
             @Test
             void reports_a_missing_credential_without_updating() {
                 Mockito.when(credentialStore.get("missing")).thenReturn(CompletableFuture.completedFuture(Optional.empty()));
-                Assertions.assertThatThrownBy(() -> authService.invalidateCredential(new InvalidateCredentialRequest("missing")))
+                Assertions.assertThatThrownBy(() -> authService.invalidateCredential(CALLER, new InvalidateCredentialRequest("missing")))
                         .isInstanceOf(ResourceNotFoundException.class);
                 Mockito.verify(credentialStore, Mockito.never()).update(Mockito.any(), Mockito.any());
             }

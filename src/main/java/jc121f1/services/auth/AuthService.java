@@ -14,18 +14,18 @@ import jc121f1.model.auth.dao.Session;
 import jc121f1.model.auth.dao.User;
 
 /**
- * Identity and credential lifecycle operations. Callers must authorize account access,
- * user management before invoking these operations.
- * This service authenticates credentials and rejects inactive accounts; it does not
- * decide whether a caller is entitled to perform an action.
+ * Identity and credential lifecycle operations. Protected operations enforce authorization
+ * at this boundary using a caller established by authentication.
  */
 public interface AuthService {
+    /** Create a new account and its first owner. Existing-account creation uses the caller overload. */
     User createUser(CreateUserRequest createUserRequest);
-    User getUser(GetUserRequest getUserRequest);
-    User deleteUser(DeleteUserRequest deleteUserRequest);
+    User createUser(AuthenticatedSession caller, CreateUserRequest createUserRequest);
+    User getUser(AuthenticatedSession caller, GetUserRequest getUserRequest);
+    User deleteUser(AuthenticatedSession caller, DeleteUserRequest deleteUserRequest);
     Session login(LoginRequest loginRequest);
     Session exchangeServiceCredential(ExchangeServiceCredentialRequest request);
     PublicFacingCredential generateCredential(GenerateCredentialRequest request);
-    void invalidateCredential(InvalidateCredentialRequest credential);
+    void invalidateCredential(AuthenticatedSession caller, InvalidateCredentialRequest credential);
     AuthenticatedSession authenticate(AuthenticateRequest request);
 }
