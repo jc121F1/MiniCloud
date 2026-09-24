@@ -1,9 +1,22 @@
 package jc121f1.service.authz.store;
 
+import jc121f1.dagger.AuthorizationCatalogModule;
+import jc121f1.model.auth.dao.Account;
+import jc121f1.model.auth.dao.AuthenticatedSession;
 import jc121f1.model.auth.dao.Session;
+import jc121f1.model.auth.dao.User;
+import jc121f1.model.authz.AuthorizationDecision;
 import jc121f1.model.authz.Policy;
 import jc121f1.model.authz.PolicyDocument;
 import jc121f1.model.authz.PrincipalReference;
+import jc121f1.model.authz.ResourceReference;
+import jc121f1.services.auth.store.AccountStore;
+import jc121f1.services.auth.store.CredentialStore;
+import jc121f1.services.auth.store.UserStore;
+import jc121f1.services.authz.AuthorizationRules;
+import jc121f1.services.authz.AuthorizationServiceImpl;
+import jc121f1.services.authz.PolicyServiceImpl;
+import jc121f1.services.authz.PolicyValidator;
 import jc121f1.services.authz.exceptions.PolicyConflictException;
 import jc121f1.services.authz.exceptions.PolicyNotFoundException;
 import jc121f1.services.authz.store.nosql.DynamoDbPolicyStore;
@@ -14,6 +27,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.mockito.Mockito;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
@@ -22,6 +36,7 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
 import java.net.URI;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -175,6 +190,57 @@ class DynamoDbPolicyStoreLocalTest {
                 store.delete(account, policyId, 1).join();
             }
         }
+    }
+
+    @Test
+    void management_lifecycle_preserves_evaluator_visibility_and_concurrent_revision_checks() {
+        AccountStore accounts = Mockito.mock(AccountStore.class);
+        UserStore users = Mockito.mock(UserStore.class);
+        CredentialStore credentials = Mockito.mock(CredentialStore.class);
+        Mockito.when(accounts.get(account, true)).thenReturn(CompletableFuture.completedFuture(Optional.of(
+                Account.builder().accountId(account).ownerId("u-owner").status(Account.AccountStatus.ACTIVE).build())));
+        Mockito.when(users.get(user.subjectId(), true)).thenReturn(CompletableFuture.completedFuture(Optional.of(
+                User.builder().userId(user.subjectId()).accountId(account).build())));
+        Mockito.when(users.get("u-owner", true)).thenReturn(CompletableFuture.completedFuture(Optional.of(
+                User.builder().userId("u-owner").accountId(account).build())));
+        var registry = AuthorizationCatalogModule.actionRegistry();
+        var evaluator = new AuthorizationServiceImpl(accounts, users, credentials, store, registry,
+                new PolicyValidator(registry), new AuthorizationRules());
+        var principal = new AuthenticatedSession(account, user.subjectId(), Session.SubjectType.USER);
+        var owner = new AuthenticatedSession(account, "u-owner", Session.SubjectType.USER);
+        var management = new PolicyServiceImpl(evaluator, store, new PolicyValidator(registry), users, credentials);
+        var target = new ResourceReference("instance", account, "instance", "i-1");
+        Policy created = management.createPolicy(owner, document("instance:Start"));
+        String policyId = created.policyId();
+        Assertions.assertThat(management.getPolicy(owner, policyId)).isEqualTo(created);
+        Assertions.assertThat(management.listPolicies(owner)).containsExactly(created);
+        management.attachPolicy(owner, policyId, 1, user);
+        management.attachPolicy(owner, policyId, 1, user);
+        Assertions.assertThat(management.listAttachedPolicies(owner, user)).containsExactly(created);
+        Assertions.assertThatThrownBy(() -> management.deletePolicy(owner, policyId, 1)).isInstanceOf(PolicyConflictException.class);
+        Assertions.assertThat(evaluator.evaluate(principal, "instance:Start", target).outcome())
+                .isEqualTo(AuthorizationDecision.Outcome.ALLOW);
+        Policy denied = management.updatePolicy(owner, policyId, 1, new PolicyDocument(1, List.of(new PolicyDocument.Statement(
+                PolicyDocument.Effect.DENY, List.of("instance:Start"), List.of("mc:instance:" + account + ":instance/*")))));
+        Assertions.assertThat(management.listAttachedPolicies(owner, user)).containsExactly(denied);
+        Assertions.assertThat(evaluator.evaluate(principal, "instance:Start", target).reason())
+                .isEqualTo(AuthorizationDecision.Reason.EXPLICIT_DENY);
+        Assertions.assertThatThrownBy(() -> management.updatePolicy(owner, policyId, 1, document("instance:Stop")))
+                .isInstanceOf(PolicyConflictException.class);
+        List<CompletableFuture<Policy>> writes = IntStream.range(0, 4)
+                .mapToObj(index -> CompletableFuture.supplyAsync(() -> management.updatePolicy(owner, policyId, 2,
+                        document(index % 2 == 0 ? "instance:Start" : "instance:Stop")))).toList();
+        List<Throwable> errors = outcomes(writes);
+        Assertions.assertThat(errors.stream().filter(Objects::isNull).count()).isEqualTo(1);
+        assertOnlySuccessOrConflict(errors);
+        Assertions.assertThat(management.getPolicy(owner, policyId).revision()).isEqualTo(3);
+        management.detachPolicy(owner, policyId, user);
+        management.detachPolicy(owner, policyId, user);
+        Assertions.assertThat(evaluator.evaluate(principal, "instance:Start", target).reason())
+                .isEqualTo(AuthorizationDecision.Reason.NO_MATCHING_ALLOW);
+        management.deletePolicy(owner, policyId, 3);
+        Assertions.assertThat(management.listPolicies(owner)).isEmpty();
+        Assertions.assertThatThrownBy(() -> management.getPolicy(owner, policyId)).isInstanceOf(PolicyNotFoundException.class);
     }
 
     private Policy create(String policyId) {

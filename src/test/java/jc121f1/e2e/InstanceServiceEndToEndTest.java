@@ -36,12 +36,15 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestClassOrder;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
 @MiniCloudTest
+@EnabledIfEnvironmentVariable(named = "DynamoDbLocalAvailable", matches = "True")
+@EnabledIfEnvironmentVariable(named = "DockerE2EAvailable", matches = "True")
 @TestClassOrder(ClassOrderer.OrderAnnotation.class)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)

@@ -13,6 +13,7 @@ import software.amazon.awssdk.enhanced.dynamodb.model.Page;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.ConditionCheck;
 import software.amazon.awssdk.services.dynamodb.model.Delete;
 import software.amazon.awssdk.services.dynamodb.model.Projection;
 import software.amazon.awssdk.services.dynamodb.model.Put;
@@ -119,6 +120,7 @@ public abstract class DynamoDbStore<T> implements GenericStore<T> {
         return get(id, false);
     }
 
+    @Override
     public CompletableFuture<Optional<T>> get(String id, boolean consistentRead) {
         Objects.requireNonNull(
                 id,
@@ -153,6 +155,7 @@ public abstract class DynamoDbStore<T> implements GenericStore<T> {
 
         return table.scan(request ->
                         request
+                                .consistentRead(true)
                                 .filterExpression(
                                         Expression.builder()
                                                 .expression("#recordType = :itemType")
@@ -414,6 +417,16 @@ public abstract class DynamoDbStore<T> implements GenericStore<T> {
         return List.copyOf(transactItems);
     }
 
+    /** Condition on a mapped item, composable with CRUD writes in one transaction. */
+    protected TransactWriteItem checkItem(T item, Expression condition) {
+        Objects.requireNonNull(condition, "condition");
+        return TransactWriteItem.builder().conditionCheck(ConditionCheck.builder()
+                .tableName(definition.tableName()).key(keyMap(keyOf(item)))
+                .conditionExpression(condition.expression())
+                .expressionAttributeNames(nonEmpty(condition.expressionNames()))
+                .expressionAttributeValues(nonEmpty(condition.expressionValues())).build()).build();
+    }
+
     /** Base-table queries support strong consistency; GSIs do not. SDK pages are consumed fully. */
     protected CompletableFuture<List<T>> query(QueryConditional condition, boolean consistentRead) {
         List<T> items = new CopyOnWriteArrayList<>();
@@ -471,7 +484,7 @@ public abstract class DynamoDbStore<T> implements GenericStore<T> {
         if (second == null) {
             return first;
         }
-        return Expression.builder().expression("(" + first.expression() + ") AND (" + second.expression() + ")")
+        return Expression.builder().expression(first.expression() + " AND (" + second.expression() + ")")
                 .expressionNames(merge(first.expressionNames(), second.expressionNames()))
                 .expressionValues(merge(first.expressionValues(), second.expressionValues())).build();
     }

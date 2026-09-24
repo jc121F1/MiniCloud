@@ -10,11 +10,14 @@ import jc121f1.model.auth.api.request.GetUserRequest;
 import jc121f1.model.auth.api.request.InvalidateCredentialRequest;
 import jc121f1.model.auth.api.request.LoginRequest;
 import jc121f1.model.auth.dao.Account;
+import jc121f1.model.auth.dao.AuthenticatedSession;
+import jc121f1.model.auth.dao.Session;
 import jc121f1.model.auth.dao.Credential;
 import jc121f1.model.auth.dao.PublicFacingCredential;
 import jc121f1.model.auth.dao.User;
 import jc121f1.services.auth.AuthService;
 import jc121f1.services.auth.AuthServiceImpl;
+import jc121f1.services.authz.AuthorizationService;
 import jc121f1.services.auth.store.AccountStore;
 import jc121f1.services.auth.store.CredentialStore;
 import jc121f1.services.auth.store.SessionStore;
@@ -46,6 +49,8 @@ class AuthServiceBoundaryTest {
     private static final String PASSWORD = "valid password";
     private static final String HASH = PasswordUtil.hash(PASSWORD.toCharArray());
     private static final String ACCOUNT_ID = "a-1";
+    private static final AuthenticatedSession CALLER =
+            new AuthenticatedSession(ACCOUNT_ID, "u-1", Session.SubjectType.USER);
     private static final Instant NOW = Instant.parse("2026-01-01T00:00:00Z");
 
     @Mock private UserStore users;
@@ -53,11 +58,13 @@ class AuthServiceBoundaryTest {
     @Mock private CredentialStore credentials;
     @Mock private SessionStore sessions;
     @Mock private SecureRandom random;
+    @Mock private AuthorizationService authorizationService;
     private AuthService service;
 
     @BeforeEach
     void setUp() {
-        service = new AuthServiceImpl(accounts, users, Clock.fixed(NOW, java.time.ZoneOffset.UTC), sessions, credentials, random);
+        service = new AuthServiceImpl(accounts, users, Clock.fixed(NOW, java.time.ZoneOffset.UTC), sessions, credentials,
+                random, authorizationService);
     }
 
     private User user() {
@@ -83,12 +90,12 @@ class AuthServiceBoundaryTest {
     static Stream<Consumer<AuthService>> invalidRequests() {
         Stream.Builder<Consumer<AuthService>> cases = Stream.builder();
         cases.add(service -> service.createUser(null));
-        cases.add(service -> service.getUser(null));
-        cases.add(service -> service.deleteUser(null));
+        cases.add(service -> service.getUser(CALLER, null));
+        cases.add(service -> service.deleteUser(CALLER, null));
         cases.add(service -> service.login(null));
         cases.add(service -> service.generateCredential(null));
         cases.add(service -> service.exchangeServiceCredential(null));
-        cases.add(service -> service.invalidateCredential(null));
+        cases.add(service -> service.invalidateCredential(CALLER, null));
         for (String invalid : new String[] {null, "", " \t"}) {
             cases.add(service -> service.createUser(new CreateUserRequest(invalid, PASSWORD, null)));
             cases.add(service -> service.createUser(new CreateUserRequest(EMAIL, invalid, null)));
@@ -98,14 +105,14 @@ class AuthServiceBoundaryTest {
             cases.add(service -> service.generateCredential(new GenerateCredentialRequest(EMAIL, invalid)));
             cases.add(service -> service.exchangeServiceCredential(new ExchangeServiceCredentialRequest(invalid, PASSWORD)));
             cases.add(service -> service.exchangeServiceCredential(new ExchangeServiceCredentialRequest("cre-1", invalid)));
-            cases.add(service -> service.invalidateCredential(new InvalidateCredentialRequest(invalid)));
-            cases.add(service -> service.getUser(new GetUserRequest(invalid, null)));
-            cases.add(service -> service.deleteUser(new DeleteUserRequest(null, invalid)));
+            cases.add(service -> service.invalidateCredential(CALLER, new InvalidateCredentialRequest(invalid)));
+            cases.add(service -> service.getUser(CALLER, new GetUserRequest(invalid, null)));
+            cases.add(service -> service.deleteUser(CALLER, new DeleteUserRequest(null, invalid)));
         }
         for (String blank : new String[] {"", " "}) {
-            cases.add(service -> service.createUser(new CreateUserRequest(EMAIL, PASSWORD, blank)));
-            cases.add(service -> service.getUser(new GetUserRequest(EMAIL, blank)));
-            cases.add(service -> service.deleteUser(new DeleteUserRequest(blank, EMAIL)));
+            cases.add(service -> service.createUser(CALLER, new CreateUserRequest(EMAIL, PASSWORD, blank)));
+            cases.add(service -> service.getUser(CALLER, new GetUserRequest(EMAIL, blank)));
+            cases.add(service -> service.deleteUser(CALLER, new DeleteUserRequest(blank, EMAIL)));
         }
         return cases.build();
     }
@@ -187,7 +194,7 @@ class AuthServiceBoundaryTest {
     void creates_a_user_in_an_existing_account() {
         account(Account.AccountStatus.ACTIVE);
         Mockito.when(users.create(Mockito.any())).thenAnswer(call -> CompletableFuture.completedFuture(call.getArgument(0)));
-        Assertions.assertThat(service.createUser(new CreateUserRequest(EMAIL, PASSWORD, ACCOUNT_ID)).accountId()).isEqualTo(ACCOUNT_ID);
+        Assertions.assertThat(service.createUser(CALLER, new CreateUserRequest(EMAIL, PASSWORD, ACCOUNT_ID)).accountId()).isEqualTo(ACCOUNT_ID);
         Mockito.verify(accounts, Mockito.never()).create(Mockito.any());
     }
 }

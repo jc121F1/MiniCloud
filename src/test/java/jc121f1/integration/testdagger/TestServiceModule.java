@@ -4,6 +4,7 @@ import com.github.dockerjava.api.DockerClient;
 import dagger.Module;
 import dagger.Provides;
 import jc121f1.services.auth.AuthService;
+import jc121f1.services.authz.AuthorizationService;
 import jc121f1.services.instance.InstanceService;
 import jc121f1.services.instance.InstanceServiceImpl;
 import jc121f1.services.instance.compute.ComputeBackend;
@@ -25,6 +26,12 @@ public class TestServiceModule {
     @Singleton
     AuthService authService() {
         return Mockito.mock(AuthService.class);
+    }
+
+    @Provides
+    @Singleton
+    AuthorizationService authorizationService() {
+        return Mockito.mock(AuthorizationService.class);
     }
 
     @Provides
@@ -65,8 +72,9 @@ public class TestServiceModule {
     InstanceService instanceService(
             Clock clock,
             ComputeBackend computeBackend,
-            InstanceStore instanceStore) {
+            InstanceStore instanceStore,
+            AuthorizationService authorizationService) {
 
-        return new InstanceServiceImpl(clock, computeBackend, eventBus(), instanceStore);
+        return new InstanceServiceImpl(clock, computeBackend, eventBus(), instanceStore, authorizationService);
     }
 }

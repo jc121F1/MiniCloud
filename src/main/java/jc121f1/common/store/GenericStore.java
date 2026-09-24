@@ -8,6 +8,9 @@ public interface GenericStore<T> {
 
     CompletableFuture<Optional<T>> get(String id);
 
+    /** When true, the read must observe completed writes; implementations must not silently downgrade it. */
+    CompletableFuture<Optional<T>> get(String id, boolean consistentRead);
+
     CompletableFuture<List<T>> list();
 
     CompletableFuture<T> create(T item);

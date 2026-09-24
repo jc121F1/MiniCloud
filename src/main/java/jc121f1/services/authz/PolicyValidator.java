@@ -37,7 +37,7 @@ public final class PolicyValidator {
      */
     public void validate(String accountId, PolicyDocument document) {
         Objects.requireNonNull(document, "document");
-        require(validComponent(accountId), "Invalid account ID");
+        require(isValidIdentifier(accountId), "Invalid account ID");
         require(document.version() == 1, "Unsupported policy version");
         require(!document.statements().isEmpty() && document.statements().size() <= MAX_STATEMENTS,
                 "Policy must contain 1 to 32 statements");
@@ -93,11 +93,11 @@ public final class PolicyValidator {
     public boolean isValidTarget(ActionDescriptor action, ResourceReference resource) {
         return action != null && registry.find(action.value()).filter(action::equals).isPresent()
                 && resource != null && action.supports(resource)
-                && validComponent(resource.accountId()) && validComponent(resource.resourceId())
+                && isValidIdentifier(resource.accountId()) && isValidIdentifier(resource.resourceId())
                 && (!"account".equals(resource.resourceType()) || resource.accountId().equals(resource.resourceId()));
     }
 
-    private static boolean validComponent(String value) {
+    public static boolean isValidIdentifier(String value) {
         return value != null && COMPONENT.matcher(value).matches();
     }
 

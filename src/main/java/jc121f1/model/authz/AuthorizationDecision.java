@@ -34,6 +34,7 @@ public record AuthorizationDecision(Outcome outcome, Reason reason, List<PolicyR
         INVALID_ACTION,
         INVALID_RESOURCE,
         OWNER_REQUIRED,
+        ACCOUNT_OWNER_PROTECTED,
         CREDENTIAL_OPERATION_FORBIDDEN,
         CREDENTIAL_CREATOR_MISSING,
         CREDENTIAL_CREATOR_DENIED

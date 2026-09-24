@@ -1,12 +1,14 @@
 # Authorization design
 
-Status: proposed. Implement and verify Authz before integrating instance operations.
+Status: Authz foundation checkpoints 1–5, instance integration checkpoints 1–2, ownership transfer, and the complete HTTP lifecycle were verified by user-run tests. The user also confirmed that `checkstyleMain`, `checkstyleTest`, `spotbugsMain`, and `spotbugsTest` pass after the lifecycle changes. Codex has not run tests or Gradle checks.
+
+Ownership-transfer checkpoint: after an earlier pass report, the user reported a failure in `OwnershipTransferTest.rejects_credential_and_member_without_writing`. The credential fixture lacked a strongly consistent store response, so the evaluator reported a storage error before the intended credential denial. The fixture was corrected in `d36fc64`. The user confirmed that the corrected `OwnershipTransferTest`, `checkstyleTest`, and `spotbugsTest` pass. The user has also confirmed the broader HTTP authorization lifecycle tests pass.
 
 ## Scope and existing foundation
 
 Authn establishes identity; Authz decides whether that identity may perform an action on a resource. MiniCloud already has accounts with an `ownerId`, users, credentials, and `AuthenticatedSession(accountId, subjectId, subjectType)`. Current account checks live in `AuthAuthorizationHandler`; they are not a general permission system.
 
-V1 delivers policy storage, management operations, a framework-independent evaluator, and authorization tests. Instance integration is a later milestone. Roles, groups, cross-account delegation, resource-based policies, and conditional expressions are deferred.
+V1 delivers policy storage, management operations, a framework-independent evaluator, authorization tests, and instance-service enforcement. Roles, groups, cross-account delegation, resource-based policies, and conditional expressions are deferred.
 
 ## Model
 
@@ -48,6 +50,8 @@ Action patterns permit an exact action or `service:*`. Resource patterns permit 
 
 The Java contract is defined in `services.authz.AuthorizationService`: the principal is the existing `AuthenticatedSession` and the target is a `ResourceReference`. Local callers pass a service-owned `ActionDefinition`; its canonical string identifies the action for transport and persistence. `evaluate` returns `AuthorizationDecision`; `authorize` returns normally only on allow and throws `AuthorizationDeniedException` on denial. Storage failures propagate separately.
 
+`AuthorizationServiceImpl` uses the existing identity-store interfaces and `PolicyStore`, with no DynamoDB or HTTP dependencies. It rejects malformed requests and cross-account targets before reads, then requests strongly consistent account/user/credential reads via `GenericStore.get(id, true)`. Every evaluation loads current policies; stored documents are revalidated and corrupt/incompatible policy data fails as a storage error. Decisions include deduplicated, sorted matched policy IDs/revisions from the credential and creator where applicable. The evaluator also rejects deletion of the current account owner. Instance and protected auth routes now enforce through this evaluator.
+
 Evaluate in this order:
 
 1. Resolve current principal/account state. Deny deleted users, revoked credentials, inactive accounts, malformed references, and cross-account requests.
@@ -75,7 +79,9 @@ V1 validation limits are 32 statements, 32 action entries and 32 resource entrie
 
 Use conditional revisions for updates and atomic attachment changes. Reject deletion of an attached policy. Authorization reads must observe completed policy updates/detachments; do not cache grants in sessions or rely on eventually consistent indexes for enforcement. Storage failures fail closed and surface as service errors. Requests already authorized may complete; revocation is not cancellation of in-flight work.
 
-`PolicyStore` is a trusted persistence interface; the forthcoming `PolicyService` implementation must authorize callers, validate documents, and resolve principal existence before using it. `DynamoDbPolicyStore` uses the dedicated `MiniCloudAuthorizationStore` table with `pk`/`sk` keys. Policy rows use account partitions; attachment rows use account plus principal type/ID partitions. Base-table queries and point reads are strongly consistent and queries follow all pages.
+`PolicyServiceImpl` enforces owner authorization on every operation through the evaluator, scopes policy storage to the caller's account, validates documents, and checks attachment targets with strongly consistent identity reads. Attaching credentials requires usable credentials and an existing same-account creator; listing their attachments remains available after revocation. Detach skips target existence checks so owners can clean up deleted identities. Identity validation and policy mutation are not a cross-store transaction: deletion/revocation during attachment can leave a dormant attachment, but the evaluator's fresh identity checks prevent it from granting access. Deployment wrappers record audit events; the HTTP adapter calls those wrappers.
+
+`PolicyStore` is a trusted persistence interface behind policy management. `DynamoDbPolicyStore` uses the dedicated `MiniCloudAuthorizationStore` table with `pk`/`sk` keys. Policy rows use account partitions; attachment rows use account plus principal type/ID partitions. Base-table queries and point reads are strongly consistent and queries follow all pages.
 
 The policy store extends `common.store.nosql.DynamoDbStore<PolicyRecord>`. The common layer owns Enhanced Client mapping, table initialization, composite-key access, query pagination, and transaction execution. Its CRUD transaction builders can be composed with conditional attribute updates, while ordinary update/delete now accept optional persisted-state conditions. Default CRUD semantics remain unchanged. Partial updates are restricted to stores without unique constraints; constrained stores must use the CRUD builders so unique-lock changes remain atomic. Composite-key stores currently reject unique-constraint definitions because the existing unique-lock format is partition-only.
 
@@ -87,13 +93,89 @@ Conflicting concurrent operations either resolve idempotently or report a confli
 
 New-account signup establishes the first user as owner through the existing account creation flow. Ownership transfer requires the current owner and an existing same-account user, and updates ownership atomically. Reject deletion of the current owner. Lost-owner recovery is an explicit operator procedure outside the public API; no unauthenticated recovery endpoint.
 
+`POST /users/transfer-ownership` takes `{"newOwnerUserId":"u-..."}` and requires a user bearer session. AuthService enforces the service-owned `AuthAction.TRANSFER_OWNERSHIP` through the audited evaluator. Only the current owner of an active account may call it; attached denies cannot remove this recovery right. Credentials and nonowners are denied. The service rechecks the owner with a strongly consistent account read after authorization, checks the proposed user with a strongly consistent identity read, then submits the observed owner to persistence. A transfer to the same owner is an idempotent, conditional no-op; it still requires current ownership and an existing user. A missing or foreign target returns 404; malformed input returns 400; stale owner or deletion races return 409. A caller may reread state and retry a conflict. Storage failures return 500 and do not report completion. A successful response contains the account with its new owner, not credentials or sessions. The audited decision and a separate identity-operation completion/failure event record the result without secrets.
+
+The account and user rows remain in Auth-owned DynamoDB tables. The common `DynamoDbStore` transaction builder now offers a mapped-item condition check, composed with existing conditional CRUD builders. Transfer atomically checks that the account still has the owner observed during authorization and remains active, and that the proposed user still exists in that account. User deletion atomically checks that the account's current owner is different from the target while deleting the user and its unique email lock. Competing transfers and transfer/deletion races cannot leave an account owned by a deleted user. A preauthorized request may still finish if it wins the transaction; completed owner changes are visible to subsequent strong reads. These cross-table transactions are an in-process Auth persistence guarantee. Extracting Auth to another service or changing storage boundaries requires a new protocol preserving the same owner/user atomicity; shared database access from another service is not the contract.
+
+Ownership checkpoint tests include service authorization and audit outcomes, HTTP mapping, and opt-in DynamoDB Local transaction races. Run with DynamoDB Local at localhost:8000 and `DynamoDbLocalAvailable=True` to include the persistence suite.
+
+The user initially reported the ownership checkpoint commands passed, then reported the specific credential-fixture test failure above. After the fixture correction, the user confirmed `OwnershipTransferTest`, `checkstyleTest`, and `spotbugsTest` pass. The broader lifecycle tests below were subsequently reported as passing.
+
+Ownership checkpoint commands from PowerShell in the repository root (with DynamoDB Local running for the second command):
+
+```powershell
+.\gradlew.bat test --tests 'jc121f1.service.auth.OwnershipTransferTest' --tests 'jc121f1.integration.AuthApiIntegrationTest' --tests 'jc121f1.service.auth.AuthServiceTest' --tests 'jc121f1.service.auth.AuthServiceFailureTest' --tests 'jc121f1.service.auth.AuthServiceLifecycleTest' --tests 'jc121f1.service.auth.AuthServiceAuthorizationTest'
+$env:DynamoDbLocalAvailable='True'; .\gradlew.bat test --tests 'jc121f1.service.auth.OwnershipTransferLocalTest'; Remove-Item Env:\DynamoDbLocalAvailable
+.\gradlew.bat checkstyleMain checkstyleTest spotbugsMain spotbugsTest
+```
+
+## Complete HTTP lifecycle checkpoint
+
+`AuthorizationLifecycleEndToEndTest` starts the three real HTTP services against one isolated set of six uniquely named DynamoDB Local tables and wires a controlled in-memory compute backend. It uses the real identity, session, credential, instance, policy, and audited authorization services. The test creates unique accounts and identities, exercises authenticated policy management and credential exchange, checks default deny, action-specific grants, list and cross-account filtering, explicit deny, replacement and detachment visibility, revocation, user deletion, ownership transfer, recovery rights, creator ceiling changes, and audit secrecy. It deletes its own tables and stops its servers during cleanup. The legacy Docker end-to-end test is not part of this checkpoint.
+
+Primary-key identity reads and generic scans now request strong consistency. New-user login still uses the user email GSI, which is eventually consistent; the test polls for that index with a bounded wait, without sleeping for a fixed duration. Policy attachment and document reads already use strongly consistent base-table operations. Requests begun after a completed detach, replacement, deletion, revocation, or transfer must see its effect. A request that passed authorization before such a change may complete; this suite does not assert cancellation of in-flight work. A scan is strongly consistent per read but is not a multi-item snapshot.
+
+Credential exchange updates `lastUsedAt` only while the stored credential remains unrevoked. This prevents a late exchange write from restoring a credential that a concurrent request already revoked. The lifecycle suite checks the persisted condition against a stale credential value after HTTP revocation. A racing exchange can fail as a storage conflict; it cannot reenable the credential.
+
+Run from PowerShell in the repository root with DynamoDB Local at localhost:8000:
+
+```powershell
+$env:DynamoDbLocalAvailable='True'; .\gradlew.bat test --tests 'jc121f1.e2e.AuthorizationLifecycleEndToEndTest' --tests 'jc121f1.service.auth.CredentialOwnershipTest'; Remove-Item Env:\DynamoDbLocalAvailable
+.\gradlew.bat checkstyleMain checkstyleTest spotbugsMain spotbugsTest
+```
+
+The user confirmed that both the lifecycle test command and the Checkstyle/SpotBugs command above pass. No microservice extraction has begun.
+
 ## Enforcement and verification
 
 Policy-management endpoints use this subsystem's owner checks from the start. Login, token exchange, and new-account signup are explicit authentication/bootstrap operations; other operations require declared authorization. Existing auth endpoint account checks will subsequently use the shared evaluator. Missing authorization metadata must not silently make an operation public.
 
 Audit policy mutations and decisions using principal, account, action, resource, outcome, reason, and policy revision; never record secrets or tokens. API responses distinguish invalid authentication (401) from denied permission (403), without exposing policy details. Resource APIs may consistently conceal inaccessible resources with 404.
 
-Completion requires tests for default deny, allow/deny precedence, exact/wildcard matching, cross-account isolation, owner recovery and transfer, credential permission intersection, creator deletion, policy replacement/detachment, concurrent management changes, and storage failures. Test management operations through their API and verify denied mutations leave storage unchanged. Instance integration starts only after this contract and its tests are complete.
+`AuthorizationModule` binds the service interfaces to `AuditedAuthorizationService` and `AuditedPolicyService`. The wrappers leave the evaluator and management implementation focused on authorization and persistence. Each evaluation (including enforcement) emits one decision event. Each management call emits a separate completion or failure event, so an owner authorization allow is not mistaken for a committed change. Events include a UTC timestamp, caller identity, action, resource, outcome, stable reason, policy ID/revision evidence, and attachment target/expected revision where applicable. Update success records the resulting revision; attach/delete record the revision checked by storage. Detach does not claim a document revision because it neither checks nor returns one. List results describe the revisions observed, not a transactional snapshot. Storage exceptions are error events rather than denials; exception messages and policy documents are excluded.
+
+Audit delivery currently uses JSON payloads on the `jc121f1.audit.authorization` application logger. This is best-effort operational auditing, not a durable transactional audit ledger: collection/retention belongs to deployment, and a crash or sink failure can lose an event. A sink failure emits a fixed error message without changing authorization decisions, masking storage errors, or reporting an already committed mutation as failed. Guaranteed durable delivery would require a storage-backed outbox and is not implemented here.
+
+Completion requires tests for default deny, allow/deny precedence, exact/wildcard matching, cross-account isolation, owner recovery and transfer, credential permission intersection, creator deletion, policy replacement/detachment, concurrent management changes, and storage failures. Management operations are tested through their API and denied mutations leave storage unchanged. Instance integration followed this contract and its verified tests.
+
+## Management HTTP API
+
+`Main` starts `AuthzWebService` on port 7072 alongside Auth (7071) and Instance (7070). It has its own Dagger component and reuses the existing authentication handler. All matched routes require authentication, including documentation; there is no public policy-management route. Send `Authorization: Bearer <session-token>` and `Content-Type: application/json`. This is a separate HTTP boundary in the existing process, not completed microservice extraction: identity reads and token authentication still use local Auth stores.
+
+| Method | Path | JSON request | Success |
+| --- | --- | --- | --- |
+| POST | `/policies/create` | `document` | 201, policy with server-generated ID and revision 1 |
+| POST | `/policies/describe` | `policyId` | 200, policy |
+| GET | `/policies` | No body | 200, policy array |
+| POST | `/policies/update` | `policyId`, `expectedRevision`, `document` | 200, replacement policy with new revision |
+| POST | `/policies/delete` | `policyId`, `expectedRevision` | 204 |
+| POST | `/policies/attach` | `policyId`, `expectedRevision`, `principal` | 204 |
+| POST | `/policies/detach` | `policyId`, `principal` | 204 |
+| POST | `/policies/attachments/list` | `principal` | 200, policy array |
+
+`principal` is an attachment target such as `{"accountId":"a-123","subjectId":"u-456","subjectType":"USER"}`; `CREDENTIAL` is the other supported type. Caller identity always comes from authentication. Requests cannot supply policy ownership or the acting principal. Unknown fields, duplicate keys, trailing JSON, numeric enums, and fractional revisions are rejected. Body parsing is bounded to 64 KiB of bytes, including chunked requests; document limits remain stricter after parsing.
+
+Errors distinguish invalid authentication (401), permission denial (403), invalid JSON/document/input (400), missing policy/target (404), revision or attachment conflicts (409), oversized bodies (413), and storage/internal failures (500). Denials do not disclose internal decision reasons, and parser/storage exception text is not returned. Required request fields are checked at the HTTP boundary; service validation remains authoritative for policy semantics. HTTP integration tests run real authorization, management, and audit layers against mocked persistence; the separate DynamoDB Local suite verifies storage transactions and concurrency.
+
+## Instance integration decisions
+
+Instances carry a persisted `accountId` assigned from the authenticated caller when created. The field is excluded from client JSON and must never be read from a request when determining ownership. A submitted `accountId` on create is ignored. State transitions retain persisted ownership. Existing rows without an account ID need explicit migration before they can be authorized; they must not inherit an account from a caller-supplied value or a default.
+
+Public create, list, describe, start, stop, and delete calls enforce their corresponding `InstanceAction` inside `InstanceService`. Create's initial backend start is part of the create operation. Startup reconciliation and health events are internal maintenance work on stored instances, without an end-user request. The instance service calls the DI-provided audited `AuthorizationService` interface; the evaluator still depends only on action descriptors and resource references.
+
+The list operation requires `instance:List` on the caller's account resource. Its result includes only persisted instances owned by that account for which the caller also has `instance:Describe` on the concrete instance resource. A denied describe decision excludes that row; a storage failure aborts the list instead of returning a partial success. Thus an account-scoped list grant alone does not reveal instances covered by a per-instance deny or lacking a describe grant.
+
+Integration checkpoint 1 added the persisted, client-hidden ownership field and tests its storage mapping and JSON behavior. The user confirmed its targeted test and Checkstyle/SpotBugs checks passed. Integration checkpoint 2 passes the authenticated session into every instance service call, enforces all six actions inside the service, and applies the list rule above. HTTP handlers use `AuthContext` after authentication; missing/invalid authentication remains 401 and authorization denial maps to 403. The user confirmed its tests and checks passed after the HTTP test fixture correction. Integration checkpoint 3 exercises the real audited evaluator through the instance service and HTTP boundary, including current policy changes, credential intersection, owner behavior, account isolation, list filtering, and storage errors. An initial run exposed a test fixture restubbing error; it was corrected and the HTTP coverage expanded. The user confirmed the final tests pass. Final Checkstyle and SpotBugs results have not been reported.
+
+## Auth identity integration checkpoint
+
+`AuthService` now requires an authenticated caller for adding a user to an existing account, describing or deleting a user, and invalidating a credential. It resolves user and credential ownership from the identity stores and enforces the corresponding `AuthAction` through the injected audited `AuthorizationService` before returning protected data or mutating storage. The authorization evaluator supplies same-account isolation, explicit-deny precedence, credential restrictions, and owner-deletion protection. Auth HTTP middleware establishes `AuthContext`; handlers pass that trusted session to the service. Authentication failure remains 401 and permission denial maps to 403.
+
+`POST /users/create` with no `accountId` is new-account signup and needs no existing session. The same path with `accountId` adds a user to an existing account and requires a bearer session with `auth:CreateUser` on that account. Direct service callers must use the caller overload for existing-account creation; the signup method rejects a supplied `accountId`. Login and credential exchange remain authentication operations. Credential generation remains password authenticated without a bearer session: after password verification, the service derives the user principal from the stored matching user and enforces `auth:GenerateCredential` on that account before creating the credential. Submitted identifiers never establish the acting principal.
+
+The user confirmed the auth identity integration tests pass. Checkstyle and SpotBugs results for this checkpoint have not been separately confirmed. Test consolidation may reduce fixture duplication in a later checkpoint without removing behavior coverage.
+
+A follow-up checkpoint adds service tests using the real audited evaluator in the existing auth authorization test class. They exercise owner read and deletion protection, explicit deny, credential and creator grant intersection, and password-authenticated credential generation before and after a grant. The user confirmed these tests pass. Checkstyle and SpotBugs results have not been separately confirmed.
 
 ## Future service decomposition
 
@@ -107,10 +189,10 @@ After decomposition, authenticate both the calling service and the end-user iden
 
 ## Implementation checkpoints
 
-1. Contracts, service-owned action catalogs, policy validator, management errors, and credential creator metadata: user confirmed the checks passed, including the catalog refactor. Creator/account reassignment is rejected by normal credential-store updates, including attempts to assign an inferred creator to legacy credentials. Legacy credentials remain readable; the forthcoming evaluator must deny credentials without a creator.
-2. Policy persistence using the extended common store: implemented with common-layer regression tests and Authz DynamoDB Local transaction/concurrency tests; awaiting user-run verification of the refactor. Local tests require DynamoDB at localhost:8000 and `DynamoDbLocalAvailable=True`; Authz tests create and remove a uniquely named test table.
-3. Authorization evaluator and enforcement tests: pending.
-4. Policy-management implementation and concurrency tests: pending.
-5. Management API, audit records, and integration tests: pending.
+1. Contracts, service-owned action catalogs, policy validator, management errors, and credential creator metadata: user confirmed the checks passed, including the catalog refactor. Creator/account reassignment is rejected by normal credential-store updates, including attempts to assign an inferred creator to legacy credentials. Legacy credentials remain readable; the evaluator denies credentials without a creator.
+2. Policy persistence using the extended common store: user confirmed the refactor's tests passed. Local tests require DynamoDB at localhost:8000 and `DynamoDbLocalAvailable=True`; Authz tests create and remove a uniquely named test table.
+3. Authorization evaluator and enforcement: user confirmed tests passed, including the refactor separating user and credential evaluation. Strong identity reads reuse the common store. Instance integration is described above.
+4. Policy-management implementation and concurrency tests: user confirmed checks passed. Unit tests cover owner enforcement on all eight operations, target validation, cleanup, immutable results, and error propagation. DynamoDB Local tests exercise the management lifecycle, evaluator visibility, and concurrent revision updates through the service.
+5. Management API, audit records, and integration tests: user confirmed both the audit and management API checkpoints passed, including all eight endpoints, owner enforcement, authentication-before-parsing, account isolation, request limits, status mapping, and audit outcomes. Verification includes the user's local SpotBugs suppression adjustments. Instance integration is described above.
 
 Each checkpoint is committed before pausing for the user to run tests. Do not proceed past a checkpoint until its results are reviewed.
