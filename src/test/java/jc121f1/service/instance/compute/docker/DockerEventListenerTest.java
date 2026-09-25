@@ -12,6 +12,7 @@ import jc121f1.services.instance.compute.docker.EventAction;
 import jc121f1.services.instance.events.EventBus;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -53,6 +54,11 @@ public class DockerEventListenerTest {
         Mockito.verify(eventsCmd).exec(captor.capture());
 
         callback = captor.getValue();
+    }
+
+    @AfterEach
+    void closeListener() throws IOException {
+        eventListener.close();
     }
 
     @Nested

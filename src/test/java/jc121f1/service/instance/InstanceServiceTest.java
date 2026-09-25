@@ -661,7 +661,7 @@ public class InstanceServiceTest {
 
                 reconcile(instance, Map.of(instance.id(), ComputeStatus.STOPPED));
 
-                Mockito.verify(computeBackend).start(instance);
+                Mockito.verify(computeBackend).start(instance.toBuilder().state(InstanceState.STARTING).build());
                 Assertions.assertThat(instancesById.get(instance.id()).state())
                         .isEqualTo(InstanceState.RUNNING);
             }
@@ -673,8 +673,9 @@ public class InstanceServiceTest {
                 reconcile(instance, Map.of(instance.id(), ComputeStatus.MISSING));
 
                 InOrder inOrder = Mockito.inOrder(computeBackend);
-                inOrder.verify(computeBackend).create(instance);
-                inOrder.verify(computeBackend).start(instance);
+                Instance reserved = instance.toBuilder().state(InstanceState.STARTING).build();
+                inOrder.verify(computeBackend).create(reserved);
+                inOrder.verify(computeBackend).start(reserved);
             }
 
             @Test
@@ -683,7 +684,7 @@ public class InstanceServiceTest {
 
                 reconcile(instance, Map.of(instance.id(), ComputeStatus.RUNNING));
 
-                Mockito.verify(computeBackend).stop(instance);
+                Mockito.verify(computeBackend).stop(instance.toBuilder().state(InstanceState.STOPPING).build());
                 Assertions.assertThat(instancesById.get(instance.id()).state())
                         .isEqualTo(InstanceState.STOPPED);
             }
@@ -716,8 +717,9 @@ public class InstanceServiceTest {
 
                 reconcile(instance, Map.of());
 
-                Mockito.verify(computeBackend).create(instance);
-                Mockito.verify(computeBackend).start(instance);
+                Instance reserved = instance.toBuilder().state(InstanceState.STARTING).build();
+                Mockito.verify(computeBackend).create(reserved);
+                Mockito.verify(computeBackend).start(reserved);
             }
 
             @Test

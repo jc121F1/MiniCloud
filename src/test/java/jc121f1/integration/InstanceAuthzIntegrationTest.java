@@ -193,6 +193,27 @@ class InstanceAuthzIntegrationTest {
     }
 
     @Test
+    void lifecycleReservationsReturnConflictWithoutReachingBackend() throws Exception {
+        for (InstanceState state : List.of(InstanceState.STARTING, InstanceState.STOPPING)) {
+            Mockito.when(instances.get(FIRST.id())).thenReturn(found(FIRST.toBuilder().state(state).build()));
+            Assertions.assertThat(send("POST", "/instances/delete", idBody(FIRST), "owner-token").statusCode())
+                    .as("delete while %s", state).isEqualTo(409);
+        }
+
+        Mockito.when(instances.get(FIRST.id()))
+                .thenReturn(found(FIRST.toBuilder().state(InstanceState.DELETING).build()));
+        for (String path : List.of("/instances/start", "/instances/stop")) {
+            Assertions.assertThat(send("POST", path, idBody(FIRST), "owner-token").statusCode())
+                    .as(path).isEqualTo(409);
+            Assertions.assertThat(send("POST", path, idBody(FIRST), "member-token").statusCode())
+                    .as("authorization before lifecycle validation: %s", path).isEqualTo(403);
+        }
+        Mockito.verify(instances, Mockito.never()).update(Mockito.any(), Mockito.any());
+        Mockito.verify(instances, Mockito.never()).delete(Mockito.any());
+        Mockito.verifyNoInteractions(backend);
+    }
+
+    @Test
     void foreignAndUnownedRowsCannotBeAccessedByIdOrName() throws Exception {
         Mockito.when(instances.getByName(FOREIGN.name())).thenReturn(found(FOREIGN));
         for (String path : List.of("/instances/describe", "/instances/start",

@@ -7,6 +7,7 @@ import com.github.dockerjava.api.command.ListContainersCmd;
 import com.github.dockerjava.api.command.RemoveContainerCmd;
 import com.github.dockerjava.api.command.StartContainerCmd;
 import com.github.dockerjava.api.command.StopContainerCmd;
+import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.Container;
 import com.github.dockerjava.api.model.Event;
 import com.github.dockerjava.api.model.HostConfig;
@@ -323,6 +324,44 @@ public class DockerComputeBackendTest {
         }
 
         @Test
+        void It_should_allow_repeated_deletion() {
+            computeBackend.delete(instance).join();
+            computeBackend.delete(instance).join();
+            Mockito.verify(removeContainerCmd).exec();
+        }
+
+        @Test
+        void It_should_treat_an_already_removed_container_as_deleted() {
+            Mockito.doThrow(new NotFoundException("already absent")).when(removeContainerCmd).exec();
+            computeBackend.delete(instance).join();
+            computeBackend.delete(instance).join();
+            Mockito.verify(removeContainerCmd).exec();
+            Assertions.assertThat(computeBackend.describeStatuses(List.of(instance)))
+                    .containsEntry(INSTANCE_ID, ComputeStatus.MISSING);
+        }
+
+        @Test
+        void It_should_preserve_mapping_when_deletion_fails() {
+            Mockito.doThrow(new IllegalStateException("daemon failed")).when(removeContainerCmd).exec();
+            Assertions.assertThatThrownBy(() -> computeBackend.delete(instance).join())
+                    .hasRootCauseMessage("daemon failed");
+            Assertions.assertThat(computeBackend.describeStatuses(List.of(instance)))
+                    .containsEntry(INSTANCE_ID, ComputeStatus.RUNNING);
+        }
+
+        @Test
+        void It_should_remove_mapping_even_when_a_die_event_updates_it_during_deletion() {
+            Consumer<DockerContainerEvent> consumer = dockerEventConsumer();
+            Mockito.doAnswer(invocation -> {
+                consumer.accept(new DockerContainerEvent(CONTAINER_ID, EventAction.DIE));
+                return null;
+            }).when(removeContainerCmd).exec();
+            computeBackend.delete(instance).join();
+            Assertions.assertThat(computeBackend.describeStatuses(List.of(instance)))
+                    .containsEntry(INSTANCE_ID, ComputeStatus.MISSING);
+        }
+
+        @Test
         void It_should_complete_successfully() {
             Assertions.assertThat(computeBackend.delete(instance).join())
                     .isNull();
@@ -362,10 +401,9 @@ public class DockerComputeBackendTest {
         }
 
         @Test
-        void Delete_should_throw() {
-            Assertions.assertThatThrownBy(
-                    () -> computeBackend.delete(instance).join()
-            ).hasMessageContaining("No Docker container exists");
+        void Delete_should_succeed_when_already_absent() {
+            Assertions.assertThat(computeBackend.delete(instance).join()).isNull();
+            Mockito.verify(dockerClient, Mockito.never()).removeContainerCmd(Mockito.anyString());
         }
     }
 

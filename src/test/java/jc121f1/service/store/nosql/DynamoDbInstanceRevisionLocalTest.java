@@ -80,6 +80,24 @@ class DynamoDbInstanceRevisionLocalTest {
     }
 
     @Test
+    void deletionAndStartCompeteForTheSamePersistedRevision() {
+        Instance original = create();
+        CompletableFuture<Instance> start = store.update(original, original.toBuilder()
+                .state(InstanceState.STARTING).build());
+        CompletableFuture<Instance> deletion = store.update(original, original.toBuilder()
+                .state(InstanceState.DELETING).build());
+        CompletableFuture.allOf(start, deletion).handle((ignored, error) -> null).join();
+        Assertions.assertThat(start.isCompletedExceptionally() ^ deletion.isCompletedExceptionally()).isTrue();
+        Instance winner = store.get(original.id(), true).join().orElseThrow();
+        Assertions.assertThat(winner.state()).isEqualTo(start.isCompletedExceptionally()
+                ? InstanceState.DELETING : InstanceState.STARTING);
+        Assertions.assertThat(winner.revision()).isEqualTo(1L);
+        Assertions.assertThatThrownBy(() -> store.update(original, original.toBuilder()
+                .state(InstanceState.RUNNING).build()).join()).hasCauseInstanceOf(ConflictException.class);
+        Assertions.assertThatThrownBy(() -> store.delete(original).join()).hasCauseInstanceOf(ConflictException.class);
+    }
+
+    @Test
     void staleCompletionCannotRecreateDeletedRow() {
         Instance original = create();
         store.delete(original).join();

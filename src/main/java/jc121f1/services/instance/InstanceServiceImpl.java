@@ -40,10 +40,7 @@ import java.util.function.Supplier;
 public class InstanceServiceImpl implements InstanceService {
     private final Clock clock;
 
-    @SuppressFBWarnings(
-            value = "EI_EXPOSE_REP2",
-            justification = "computeBackend is an injected service dependency and is intentionally shared."
-    )
+
     private final ComputeBackend computeBackend;
 
     private final EventBus eventBus;
@@ -51,6 +48,10 @@ public class InstanceServiceImpl implements InstanceService {
     private final InstanceStore instanceStore;
     private final AuthorizationService authorizationService;
 
+    @SuppressFBWarnings(
+            value = "EI_EXPOSE_REP2",
+            justification = "computeBackend is an injected service dependency and is intentionally shared."
+    )
     @Inject
     public InstanceServiceImpl(Clock clock, ComputeBackend computeBackend, EventBus eventBus,
                                InstanceStore instanceStore, AuthorizationService authorizationService) {
@@ -162,17 +163,27 @@ public class InstanceServiceImpl implements InstanceService {
         }
         remove = get(identifier);
         authorize(caller, InstanceAction.DELETE, remove);
+        if (!remove.state().isDeletable()) {
+            throw new ConflictException("Instance {" + identifier + "} has an operation in progress. "
+                    + "Current state is {" + remove.state() + "}");
+        }
+        Instance reserved = remove.state() == InstanceState.DELETING
+                ? remove : setInstanceState(remove, InstanceState.DELETING);
 
         try {
-            computeBackend.delete(remove)
-                    .thenCompose(_ -> instanceStore.delete(remove))
-                    .join();
+            deleteReservedInstance(reserved).join();
         } catch (CompletionException error) {
             throw operationFailure(error);
         }
 
 
         return remove;
+    }
+
+    private CompletableFuture<Void> deleteReservedInstance(Instance instance) {
+        // Keep DELETING after either failure: backend deletion may already have taken effect.
+        return invokeBackend(() -> computeBackend.delete(instance))
+                .thenCompose(ignored -> instanceStore.delete(instance));
     }
 
     @Override
@@ -265,8 +276,9 @@ public class InstanceServiceImpl implements InstanceService {
         }
     }
 
-    private void observeOperation(Instance instance, CompletableFuture<Void> operation, InstanceState success) {
-        operation.whenComplete((ignored, error) -> {
+    private CompletableFuture<Void> observeOperation(
+            Instance instance, CompletableFuture<Void> operation, InstanceState success) {
+        return operation.handle((ignored, error) -> {
             if (error != null) {
                 log.warn("Backend operation failed for instance {}", instance.id(), error);
             }
@@ -276,6 +288,7 @@ public class InstanceServiceImpl implements InstanceService {
                 // A stale completion must not overwrite a newer operation, even when its backend failed.
                 log.warn("Unable to record operation completion for instance {}", instance.id(), stateError);
             }
+            return null;
         });
     }
 
@@ -292,7 +305,7 @@ public class InstanceServiceImpl implements InstanceService {
             case UNHEALTHY:
                 instanceStore.get(event.instanceId())
                         .thenAccept(optional -> optional.ifPresent(instance -> {
-                            if (!instance.state().isTerminal()) {
+                            if (instance.state() == InstanceState.RUNNING) {
                                 setInstanceState(instance, InstanceState.MISSING);
                             }
                         })).exceptionally(error -> {
@@ -363,6 +376,8 @@ public class InstanceServiceImpl implements InstanceService {
                                                         reconcileStopping(instance, status);
                                                 case MISSING ->
                                                         reconcileMissing(instance, status);
+                                                case DELETING ->
+                                                        deleteReservedInstance(instance);
                                             };
                                         })
                                         .toArray(CompletableFuture[]::new)
@@ -371,13 +386,19 @@ public class InstanceServiceImpl implements InstanceService {
     }
 
     private CompletableFuture<Void> reconcileRunning(Instance instance, ComputeStatus status) {
-        return reconcileToRunning(instance, status)
-                .exceptionally(error -> markInstanceMissing(instance, error));
+        if (status == ComputeStatus.RUNNING) {
+            return CompletableFuture.completedFuture(null);
+        }
+        return instanceStore.update(instance, instance.toBuilder().state(InstanceState.STARTING).build())
+                .thenCompose(reserved -> reconcileStarting(reserved, status));
     }
 
     private CompletableFuture<Void> reconcileStopped(Instance instance, ComputeStatus status) {
-        return reconcileToStopped(instance, status)
-                .exceptionally(error -> markInstanceMissing(instance, error));
+        if (status == ComputeStatus.STOPPED) {
+            return CompletableFuture.completedFuture(null);
+        }
+        return instanceStore.update(instance, instance.toBuilder().state(InstanceState.STOPPING).build())
+                .thenCompose(reserved -> reconcileStopping(reserved, status));
     }
 
     private CompletableFuture<Void> reconcileToRunning(Instance instance, ComputeStatus status) {
@@ -399,18 +420,14 @@ public class InstanceServiceImpl implements InstanceService {
             Instance instance,
             ComputeStatus status) {
 
-        return reconcileToRunning(instance, status)
-                .thenRun(() -> setInstanceState(instance, InstanceState.RUNNING))
-                .exceptionally(error -> markInstanceMissing(instance, error));
+        return observeOperation(instance, invokeBackend(() -> reconcileToRunning(instance, status)), InstanceState.RUNNING);
     }
 
     private CompletableFuture<Void> reconcileStopping(
             Instance instance,
             ComputeStatus status) {
 
-        return reconcileToStopped(instance, status)
-                .thenRun(() -> setInstanceState(instance, InstanceState.STOPPED))
-                .exceptionally(error -> markInstanceMissing(instance, error));
+        return observeOperation(instance, invokeBackend(() -> reconcileToStopped(instance, status)), InstanceState.STOPPED);
     }
 
     private CompletableFuture<Void> reconcileMissing(Instance instance, ComputeStatus status) {
@@ -431,13 +448,4 @@ public class InstanceServiceImpl implements InstanceService {
         }
     }
 
-    private Void markInstanceMissing(Instance instance, Throwable error) {
-        log.warn("Failed to reconcile instance {}", instance.id(), error);
-        try {
-            setInstanceState(instance, InstanceState.MISSING);
-        } catch (RuntimeException stateError) {
-            log.warn("Unable to record reconciliation failure for instance {}", instance.id(), stateError);
-        }
-        return null;
-    }
 }

@@ -6,6 +6,7 @@ import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.model.Container;
 import com.github.dockerjava.api.model.Event;
 import com.github.dockerjava.api.model.HostConfig;
+import com.github.dockerjava.api.exception.NotFoundException;
 import com.google.common.annotations.VisibleForTesting;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import jc121f1.model.instance.dao.DockerContainer;
@@ -115,29 +116,54 @@ public class DockerComputeBackend implements ComputeBackend {
         if (event.isCompletedExceptionally()) {
             return event.thenApply(ignored -> null);
         }
+        CompletableFuture<Void> result = new CompletableFuture<>();
+        result.whenComplete((ignored, failure) -> {
+            if (result.isCancelled()) {
+                event.cancel(false);
+            }
+        });
         try {
-            return CompletableFuture.runAsync(command, computeExecutor)
+            CompletableFuture.runAsync(() -> {
+                if (!result.isDone() && !event.isCompletedExceptionally()) {
+                    command.run();
+                }
+            }, computeExecutor)
                     .whenComplete((ignored, failure) -> {
                         if (failure != null) {
                             event.completeExceptionally(failure);
                         }
                     })
-                    .thenCompose(ignored -> event.thenApply(received -> null));
+                    .thenCompose(ignored -> event.thenApply(received -> null))
+                    .whenComplete((ignored, failure) -> {
+                        if (failure == null) {
+                            result.complete(null);
+                        } else {
+                            result.completeExceptionally(failure);
+                        }
+                    });
         } catch (RuntimeException failure) {
             event.completeExceptionally(failure);
-            return CompletableFuture.failedFuture(failure);
+            result.completeExceptionally(failure);
         }
+        return result;
     }
 
     @Override
     public CompletableFuture<Void> delete(Instance instance) {
         requireOpen();
-        String containerId = getContainerId(instance);
+        DockerContainer container = instanceToContainer.get(instance.id());
+        if (container == null) {
+            return CompletableFuture.completedFuture(null);
+        }
 
         return CompletableFuture.runAsync(() -> {
-            dockerClient.removeContainerCmd(containerId).withForce(true).exec();
-
-            instanceToContainer.remove(instance.id());
+            try {
+                dockerClient.removeContainerCmd(container.getId()).withForce(true).exec();
+            } catch (NotFoundException ignored) {
+                // A previous deletion may have completed before its metadata write failed.
+            }
+            instanceToContainer.computeIfPresent(instance.id(), (id, current) ->
+                    current.getId().equals(container.getId()) ? null : current);
         }, computeExecutor);
     }
 
@@ -151,7 +177,7 @@ public class DockerComputeBackend implements ComputeBackend {
                     if  (container == null) {
                         return ComputeStatus.MISSING;
                     }
-                    return instanceToContainer.get(instance.id()).getStatus();
+                    return container.getStatus();
                 }));
     }
 

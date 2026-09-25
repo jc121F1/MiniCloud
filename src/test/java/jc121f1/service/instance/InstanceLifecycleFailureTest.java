@@ -78,22 +78,31 @@ class InstanceLifecycleFailureTest {
 
     @Test
     void backendDeletionFailureIsReturnedAndRetainsRecord() {
+        Instance deleting = reserveDeletion();
         IllegalStateException failure = new IllegalStateException("delete failed");
-        Mockito.when(backend.delete(stopped)).thenReturn(CompletableFuture.failedFuture(failure));
+        Mockito.when(backend.delete(deleting)).thenReturn(CompletableFuture.failedFuture(failure));
         Assertions.assertThatThrownBy(() -> service.delete(caller, deleteRequest())).isSameAs(failure);
         Mockito.verify(store, Mockito.never()).delete(Mockito.any());
     }
 
     @Test
     void recordDeletionFailureIsReturnedAfterBackendSuccess() {
-        Mockito.when(backend.delete(stopped)).thenReturn(CompletableFuture.completedFuture(null));
+        Instance deleting = reserveDeletion();
+        Mockito.when(backend.delete(deleting)).thenReturn(CompletableFuture.completedFuture(null));
         ConflictException failure = new ConflictException("instance changed");
-        Mockito.when(store.delete(stopped)).thenReturn(CompletableFuture.failedFuture(failure));
+        Mockito.when(store.delete(deleting)).thenReturn(CompletableFuture.failedFuture(failure));
         Assertions.assertThatThrownBy(() -> service.delete(caller, deleteRequest())).isSameAs(failure);
     }
 
     private StartInstanceRequest startRequest() {
         return StartInstanceRequest.builder().instanceId("i-1").build();
+    }
+
+    private Instance reserveDeletion() {
+        Instance deleting = stopped.toBuilder().state(InstanceState.DELETING).revision(2L).build();
+        Mockito.when(store.update(Mockito.eq(stopped), Mockito.any()))
+                .thenReturn(CompletableFuture.completedFuture(deleting));
+        return deleting;
     }
 
     private DeleteInstanceRequest deleteRequest() {

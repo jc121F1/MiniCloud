@@ -15,6 +15,7 @@ public interface ComputeBackend extends AutoCloseable {
 
     CompletableFuture<Void> stop(Instance instance);
 
+    /** Removes the workload; an already absent workload is a successful, repeatable deletion. */
     CompletableFuture<Void> delete(Instance instance);
 
     Map<String, ComputeStatus> describeStatuses(List<Instance> instances);

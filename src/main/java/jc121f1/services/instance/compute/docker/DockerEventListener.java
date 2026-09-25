@@ -10,11 +10,14 @@ import jc121f1.services.instance.events.EventBus;
 
 import javax.inject.Inject;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -32,11 +35,20 @@ public class DockerEventListener implements AutoCloseable {
     private ResultCallback.Adapter<Event> callback;
     private final AtomicReference<Throwable> terminalFailure = new AtomicReference<>();
     private final AtomicBoolean closed = new AtomicBoolean();
+    private final Duration eventTimeout;
 
     @Inject
     public DockerEventListener(DockerClient dockerClient, EventBus eventBus) {
+        this(dockerClient, eventBus, Duration.ofSeconds(60));
+    }
+
+    DockerEventListener(DockerClient dockerClient, EventBus eventBus, Duration eventTimeout) {
+        if (Objects.requireNonNull(eventTimeout, "eventTimeout").toMillis() <= 0) {
+            throw new IllegalArgumentException("Event timeout must be at least one millisecond");
+        }
         this.dockerClient = dockerClient;
         this.eventBus = eventBus;
+        this.eventTimeout = eventTimeout;
         start();
     }
 
@@ -114,8 +126,14 @@ public class DockerEventListener implements AutoCloseable {
         if (failure != null) {
             future.completeExceptionally(failure);
         }
+        applyDeadline(future);
 
         return future;
+    }
+
+    void applyDeadline(CompletableFuture<Event> future) {
+        // CompletableFuture cancels its scheduled timeout when the wait finishes early.
+        future.orTimeout(eventTimeout.toMillis(), TimeUnit.MILLISECONDS);
     }
 
     @Override
