@@ -14,6 +14,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class DockerEventListener implements AutoCloseable {
 
@@ -27,6 +30,8 @@ public class DockerEventListener implements AutoCloseable {
     private final DockerClient dockerClient;
     private final EventBus eventBus;
     private ResultCallback.Adapter<Event> callback;
+    private final AtomicReference<Throwable> terminalFailure = new AtomicReference<>();
+    private final AtomicBoolean closed = new AtomicBoolean();
 
     @Inject
     public DockerEventListener(DockerClient dockerClient, EventBus eventBus) {
@@ -40,6 +45,9 @@ public class DockerEventListener implements AutoCloseable {
 
             @Override
             public void onNext(Event event) {
+                if (terminalFailure.get() != null) {
+                    return;
+                }
                 Optional<EventAction> action =
                         EventAction.fromValue(event.getAction());
 
@@ -65,12 +73,12 @@ public class DockerEventListener implements AutoCloseable {
 
             @Override
             public void onError(Throwable throwable) {
-                pendingEvents.forEach(
-                        (key, future) ->
-                                future.completeExceptionally(throwable)
-                );
+                terminate(throwable);
+            }
 
-                pendingEvents.clear();
+            @Override
+            public void onComplete() {
+                terminate(new IllegalStateException("Docker event stream ended"));
             }
         };
 
@@ -84,6 +92,10 @@ public class DockerEventListener implements AutoCloseable {
         EventKey key = new EventKey(containerId, action);
 
         CompletableFuture<Event> future = new CompletableFuture<>();
+        Throwable failure = terminalFailure.get();
+        if (failure != null) {
+            return CompletableFuture.failedFuture(failure);
+        }
 
         CompletableFuture<Event> existing = pendingEvents.putIfAbsent(key, future);
 
@@ -93,6 +105,14 @@ public class DockerEventListener implements AutoCloseable {
                             "Already waiting for " + key
                     )
             );
+            return future;
+        }
+
+        // Remove waits completed by command failures or cancellation, not only Docker events.
+        future.whenComplete((event, error) -> pendingEvents.remove(key, future));
+        failure = terminalFailure.get();
+        if (failure != null) {
+            future.completeExceptionally(failure);
         }
 
         return future;
@@ -100,14 +120,18 @@ public class DockerEventListener implements AutoCloseable {
 
     @Override
     public void close() throws IOException {
-        pendingEvents.forEach(
-                (key, future) -> future.cancel(false)
-        );
-
-        pendingEvents.clear();
-
+        if (!closed.compareAndSet(false, true)) {
+            return;
+        }
+        terminate(new CancellationException("Docker event listener is closed"));
         if (callback != null) {
             callback.close();
+        }
+    }
+
+    private void terminate(Throwable failure) {
+        if (terminalFailure.compareAndSet(null, failure)) {
+            pendingEvents.forEach((key, future) -> future.completeExceptionally(failure));
         }
     }
 
