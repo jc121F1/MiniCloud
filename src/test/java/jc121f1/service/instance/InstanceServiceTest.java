@@ -597,7 +597,7 @@ public class InstanceServiceTest {
                 instanceService.stop(CALLER, request);
 
                 Assertions.assertThatThrownBy(() -> instanceService.stop(CALLER, request))
-                        .hasMessageContaining("not in a startable state");
+                        .hasMessageContaining("not in a stoppable state");
             }
 
             @Test

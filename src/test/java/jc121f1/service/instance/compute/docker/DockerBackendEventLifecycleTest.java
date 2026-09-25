@@ -37,7 +37,7 @@ class DockerBackendEventLifecycleTest {
         try (DockerComputeBackend backend = backend(Runnable::run)) {
             StopContainerCmd command = Mockito.mock(StopContainerCmd.class);
             Mockito.when(client.stopContainerCmd("container-1")).thenReturn(command);
-            Mockito.when(command.exec()).thenThrow(new IllegalStateException("stop failed")).thenReturn(null);
+            Mockito.doThrow(new IllegalStateException("stop failed")).doNothing().when(command).exec();
 
             Assertions.assertThatThrownBy(() -> backend.stop(instance).join())
                     .hasRootCauseMessage("stop failed");
