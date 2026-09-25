@@ -13,6 +13,7 @@ class InstanceOwnershipTest {
                 .id("i-123")
                 .name("example")
                 .accountId("a-123")
+                .revision(7L)
                 .state(InstanceState.STARTING)
                 .build();
 
@@ -20,6 +21,7 @@ class InstanceOwnershipTest {
         Instance restored = schema.mapToItem(schema.itemToMap(instance, true));
 
         Assertions.assertThat(restored.accountId()).isEqualTo("a-123");
+        Assertions.assertThat(restored.revision()).isEqualTo(7L);
         Assertions.assertThat(restored.toBuilder().state(InstanceState.RUNNING).build().accountId())
                 .isEqualTo("a-123");
     }
@@ -28,12 +30,13 @@ class InstanceOwnershipTest {
     void clientJsonCannotSupplyOrReadOwner() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
         Instance instance = mapper.readValue("""
-                {"id":"i-123","name":"example","accountId":"a-spoofed","state":"RUNNING"}
+                {"id":"i-123","name":"example","accountId":"a-spoofed","revision":999,"state":"RUNNING"}
                 """, Instance.class);
 
         Assertions.assertThat(instance.accountId()).isNull();
+        Assertions.assertThat(instance.revision()).isNull();
         Assertions.assertThat(mapper.writeValueAsString(
-                instance.toBuilder().accountId("a-123").build()))
-                .doesNotContain("accountId", "a-123");
+                instance.toBuilder().accountId("a-123").revision(7L).build()))
+                .doesNotContain("accountId", "a-123", "revision");
     }
 }

@@ -33,6 +33,8 @@ import java.util.Optional;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.function.Supplier;
 
 @Slf4j
 public class InstanceServiceImpl implements InstanceService {
@@ -123,12 +125,8 @@ public class InstanceServiceImpl implements InstanceService {
         Instance returnedInstance = createdInstance.toBuilder().build();
 
         instanceStore.create(createdInstance).join();
-        createInstance(createdInstance)
-                .thenRun(() -> startInstance(createdInstance))
-                .exceptionally(error -> {
-                    setInstanceState(createdInstance, InstanceState.MISSING);
-                    return null;
-                });
+        observeOperation(createdInstance, invokeBackend(() -> createInstance(createdInstance))
+                .thenCompose(ignored -> computeBackend.start(createdInstance)), InstanceState.RUNNING);
 
         return returnedInstance;
     }
@@ -165,8 +163,13 @@ public class InstanceServiceImpl implements InstanceService {
         remove = get(identifier);
         authorize(caller, InstanceAction.DELETE, remove);
 
-        computeBackend.delete(remove)
-                .thenCompose(_ -> instanceStore.delete(remove));
+        try {
+            computeBackend.delete(remove)
+                    .thenCompose(_ -> instanceStore.delete(remove))
+                    .join();
+        } catch (CompletionException error) {
+            throw operationFailure(error);
+        }
 
 
         return remove;
@@ -193,7 +196,7 @@ public class InstanceServiceImpl implements InstanceService {
             stop = setInstanceState(stop, InstanceState.STOPPING);
         } else {
             throw new ConflictException(
-                    "Instance {" + identifier + "} is not in a startable state. " +
+                    "Instance {" + identifier + "} is not in a stoppable state. " +
                             "Current state is {" + stop.state() + "}");
         }
         stopInstance(stop);
@@ -229,13 +232,7 @@ public class InstanceServiceImpl implements InstanceService {
     }
 
     private void startInstance(Instance instance) {
-        computeBackend.start(instance)
-                .thenRun(() ->
-                        setInstanceState(instance, InstanceState.RUNNING))
-                .exceptionally(error -> {
-                    setInstanceState(instance, InstanceState.MISSING);
-                    return null;
-                });
+        observeOperation(instance, invokeBackend(() -> computeBackend.start(instance)), InstanceState.RUNNING);
     }
 
     private void authorize(AuthenticatedSession caller, InstanceAction action, Instance instance) {
@@ -257,13 +254,37 @@ public class InstanceServiceImpl implements InstanceService {
     }
 
     private void stopInstance(Instance instance) {
-        computeBackend.stop(instance)
-                .thenRun(() ->
-                        setInstanceState(instance, InstanceState.STOPPED))
-                .exceptionally(error -> {
-                    setInstanceState(instance, InstanceState.MISSING);
-                    return null;
-                });
+        observeOperation(instance, invokeBackend(() -> computeBackend.stop(instance)), InstanceState.STOPPED);
+    }
+
+    private CompletableFuture<Void> invokeBackend(Supplier<CompletableFuture<Void>> operation) {
+        try {
+            return operation.get();
+        } catch (RuntimeException error) {
+            return CompletableFuture.failedFuture(error);
+        }
+    }
+
+    private void observeOperation(Instance instance, CompletableFuture<Void> operation, InstanceState success) {
+        operation.whenComplete((ignored, error) -> {
+            if (error != null) {
+                log.warn("Backend operation failed for instance {}", instance.id(), error);
+            }
+            try {
+                setInstanceState(instance, error == null ? success : InstanceState.MISSING);
+            } catch (RuntimeException stateError) {
+                // A stale completion must not overwrite a newer operation, even when its backend failed.
+                log.warn("Unable to record operation completion for instance {}", instance.id(), stateError);
+            }
+        });
+    }
+
+    private RuntimeException operationFailure(Throwable error) {
+        Throwable cause = error;
+        while (cause instanceof CompletionException && cause.getCause() != null) {
+            cause = cause.getCause();
+        }
+        return cause instanceof RuntimeException runtime ? runtime : new CompletionException(cause);
     }
 
     private void handleHealthEvent(InstanceHealthEvent event) {
@@ -274,7 +295,10 @@ public class InstanceServiceImpl implements InstanceService {
                             if (!instance.state().isTerminal()) {
                                 setInstanceState(instance, InstanceState.MISSING);
                             }
-                        }));
+                        })).exceptionally(error -> {
+                            log.warn("Unable to apply health event for instance {}", event.instanceId(), error);
+                            return null;
+                        });
                 break;
             case HEALTHY:
                 instanceStore.get(event.instanceId())
@@ -282,7 +306,10 @@ public class InstanceServiceImpl implements InstanceService {
                             if (instance.state() == InstanceState.MISSING) {
                                 setInstanceState(instance, InstanceState.RUNNING);
                             }
-                        }));
+                        })).exceptionally(error -> {
+                            log.warn("Unable to apply health event for instance {}", event.instanceId(), error);
+                            return null;
+                        });
                 break;
             default:
         }
@@ -293,7 +320,11 @@ public class InstanceServiceImpl implements InstanceService {
             throw new IllegalArgumentException("Instances cannot be null");
         }
 
-        return instanceStore.update(previous, newInstance).join();
+        try {
+            return instanceStore.update(previous, newInstance).join();
+        } catch (CompletionException error) {
+            throw operationFailure(error);
+        }
     }
 
     private Instance setInstanceState(
@@ -402,7 +433,11 @@ public class InstanceServiceImpl implements InstanceService {
 
     private Void markInstanceMissing(Instance instance, Throwable error) {
         log.warn("Failed to reconcile instance {}", instance.id(), error);
-        setInstanceState(instance, InstanceState.MISSING);
+        try {
+            setInstanceState(instance, InstanceState.MISSING);
+        } catch (RuntimeException stateError) {
+            log.warn("Unable to record reconciliation failure for instance {}", instance.id(), stateError);
+        }
         return null;
     }
 }

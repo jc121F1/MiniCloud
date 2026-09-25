@@ -26,6 +26,7 @@ public record Instance(@OpenApiRequired String name,
                        @OpenApiRequired int memory,
                        @OpenApiRequired String id,
                        @JsonIgnore @OpenApiIgnore String accountId,
+                       @JsonIgnore @OpenApiIgnore Long revision,
                        @EqualsAndHashCode.Exclude @OpenApiRequired InstanceState state,
                        @JsonIgnore
                        @OpenApiRequired
@@ -52,6 +53,13 @@ public record Instance(@OpenApiRequired String name,
         @OpenApiIgnore
         public InstanceBuilder accountId(String accountId) {
             this.accountId = accountId;
+            return this;
+        }
+
+        @JsonIgnore
+        @OpenApiIgnore
+        public InstanceBuilder revision(Long revision) {
+            this.revision = revision;
             return this;
         }
 

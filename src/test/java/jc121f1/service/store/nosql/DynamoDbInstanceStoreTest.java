@@ -352,7 +352,7 @@ class DynamoDbInstanceStoreTest {
             Instance result = store.update(previous, updated).join();
 
             Assertions.assertEquals(
-                    updated,
+                    updated.toBuilder().revision(1L).build(),
                     result
             );
 
@@ -390,7 +390,7 @@ class DynamoDbInstanceStoreTest {
             );
 
             Assertions.assertEquals(
-                    "attribute_exists(#id)",
+                    "attribute_exists(#id) AND (attribute_exists(#instanceId) AND attribute_not_exists(#revision))",
                     instanceWrite.put()
                             .conditionExpression()
             );
@@ -421,7 +421,7 @@ class DynamoDbInstanceStoreTest {
             Instance result = store.update(previous, updated).join();
 
             Assertions.assertEquals(
-                    updated,
+                    updated.toBuilder().revision(1L).build(),
                     result
             );
 
@@ -484,7 +484,7 @@ class DynamoDbInstanceStoreTest {
             );
 
             Assertions.assertEquals(
-                    "attribute_exists(#id)",
+                    "attribute_exists(#id) AND (attribute_exists(#instanceId) AND attribute_not_exists(#revision))",
                     instanceWrite.put()
                             .conditionExpression()
             );

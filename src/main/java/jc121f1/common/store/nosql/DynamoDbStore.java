@@ -480,7 +480,7 @@ public abstract class DynamoDbStore<T> implements GenericStore<T> {
         return key.keyMap(definition.tableSchema(), TableMetadata.primaryIndexName());
     }
 
-    private static Expression combine(Expression first, Expression second) {
+    protected static Expression combine(Expression first, Expression second) {
         if (second == null) {
             return first;
         }
