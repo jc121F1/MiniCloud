@@ -5,7 +5,6 @@ import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.api.model.Event;
 import com.github.dockerjava.api.model.EventActor;
 import com.google.common.base.Preconditions;
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import jc121f1.services.instance.events.EventBus;
 
 import javax.inject.Inject;
@@ -26,10 +25,6 @@ public class DockerEventListener implements AutoCloseable {
     private final Map<EventKey, CompletableFuture<Event>> pendingEvents =
             new ConcurrentHashMap<>();
 
-    @SuppressFBWarnings(
-            value = "EI_EXPOSE_REP2",
-            justification = "dockerClient is an injected service dependency and is intentionally shared."
-    )
     private final DockerClient dockerClient;
     private final EventBus eventBus;
     private ResultCallback.Adapter<Event> callback;
@@ -42,7 +37,7 @@ public class DockerEventListener implements AutoCloseable {
         this(dockerClient, eventBus, Duration.ofSeconds(60));
     }
 
-    DockerEventListener(DockerClient dockerClient, EventBus eventBus, Duration eventTimeout) {
+    DockerEventListener(DockerClient dockerClient, EventBus eventBus, Duration eventTimeout) throws IllegalArgumentException {
         if (Objects.requireNonNull(eventTimeout, "eventTimeout").toMillis() <= 0) {
             throw new IllegalArgumentException("Event timeout must be at least one millisecond");
         }
