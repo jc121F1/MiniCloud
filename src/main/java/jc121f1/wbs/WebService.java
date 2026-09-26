@@ -1,13 +1,13 @@
 package jc121f1.wbs;
 
 import io.javalin.Javalin;
-import lombok.extern.slf4j.Slf4j;
+import java.util.Objects;
 
-@Slf4j
-public abstract class WebService {
+public abstract class WebService implements AutoCloseable {
 
     private final JmDNSManager jmdnsManager;
     private Javalin app;
+    private boolean closed;
 
     protected WebService(JmDNSManager jmdnsManager) {
         this.jmdnsManager = jmdnsManager;
@@ -17,10 +17,39 @@ public abstract class WebService {
 
     abstract public Javalin create();
 
-    public void start() {
-        app = create();
-        Runtime.getRuntime().addShutdownHook(new Thread(app::stop));
-        app.start(getPort());
+    public synchronized void start() {
+        if (closed) {
+            throw new IllegalStateException("Web service is closed");
+        }
+        if (app != null) {
+            return;
+        }
+        try {
+            app = Objects.requireNonNull(create(), "Web service app");
+            app.start(getPort());
+        } catch (RuntimeException | Error failure) {
+            try {
+                close();
+            } catch (RuntimeException | Error cleanupFailure) {
+                if (cleanupFailure != failure) {
+                    failure.addSuppressed(cleanupFailure);
+                }
+            }
+            throw failure;
+        }
+    }
+
+    @Override
+    public synchronized void close() {
+        if (closed) {
+            return;
+        }
+        closed = true;
+        Javalin running = app;
+        app = null;
+        if (running != null) {
+            running.stop();
+        }
     }
 
     public void startJmdns(String hostName, int port) {

@@ -11,6 +11,7 @@ import java.net.URI;
 import jc121f1.services.instance.events.EventBus;
 import jc121f1.services.instance.events.SimpleEventBus;
 import jc121f1.wbs.JmDNSManager;
+import jc121f1.runtime.RuntimeResources;
 
 import javax.inject.Singleton;
 import java.time.Clock;
@@ -28,18 +29,18 @@ public abstract class ServiceModule {
     @Binds @Singleton
     public abstract EventBus eventBus(SimpleEventBus eventBus);
 
-    @Provides
-    public static Executor executor() {
-        return Executors.newVirtualThreadPerTaskExecutor();
+    @Provides @Singleton
+    public static Executor executor(RuntimeResources resources) {
+        return resources.ownExecutor(Executors.newVirtualThreadPerTaskExecutor());
     }
 
     @Provides @Singleton
-    public static JmDNSManager jmDNSManager() {
-        return new JmDNSManager();
+    public static JmDNSManager jmDNSManager(RuntimeResources resources) {
+        return resources.own(new JmDNSManager(), RuntimeResources.Phase.CLIENTS);
     }
-    @Provides
-    public static DynamoDbAsyncClient dynamoDbAsyncClient() {
-        return DynamoDbAsyncClient.builder()
+    @Provides @Singleton
+    public static DynamoDbAsyncClient dynamoDbAsyncClient(RuntimeResources resources) {
+        return resources.own(DynamoDbAsyncClient.builder()
                 .endpointOverride(URI.create("http://localhost:8000"))
                 .region(Region.US_EAST_1)
                 .credentialsProvider(
@@ -47,6 +48,6 @@ public abstract class ServiceModule {
                                 AwsBasicCredentials.create("dummy", "dummy")
                         )
                 )
-                .build();
+                .build(), RuntimeResources.Phase.CLIENTS);
     }
 }

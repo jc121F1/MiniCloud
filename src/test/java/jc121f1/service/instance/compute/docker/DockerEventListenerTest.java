@@ -304,6 +304,37 @@ public class DockerEventListenerTest {
     }
 
     @Test
+    void It_should_close_a_partially_started_stream_when_construction_fails() throws IOException {
+        Closeable stream = Mockito.mock(Closeable.class);
+        IllegalStateException failure = new IllegalStateException("stream startup failed");
+        Mockito.doAnswer(call -> {
+            ResultCallback<Event> partialCallback = call.getArgument(0);
+            partialCallback.onStart(stream);
+            throw failure;
+        }).when(eventsCmd).exec(Mockito.any());
+
+        Assertions.assertThatThrownBy(() -> new DockerEventListener(dockerClient, eventBus)).isSameAs(failure);
+        Mockito.verify(stream).close();
+        Mockito.verify(dockerClient, Mockito.never()).close();
+    }
+
+    @Test
+    void It_should_preserve_startup_failure_when_partial_stream_cleanup_fails() throws IOException {
+        Closeable stream = Mockito.mock(Closeable.class);
+        IOException cleanupFailure = new IOException("stream close failed");
+        Mockito.doThrow(cleanupFailure).when(stream).close();
+        IllegalStateException failure = new IllegalStateException("stream startup failed");
+        Mockito.doAnswer(call -> {
+            ResultCallback<Event> partialCallback = call.getArgument(0);
+            partialCallback.onStart(stream);
+            throw failure;
+        }).when(eventsCmd).exec(Mockito.any());
+
+        Assertions.assertThatThrownBy(() -> new DockerEventListener(dockerClient, eventBus)).isSameAs(failure);
+        Assertions.assertThat(failure.getSuppressed()).containsExactly(cleanupFailure);
+    }
+
+    @Test
     void It_should_release_cancelled_and_externally_failed_waits() {
         CompletableFuture<Event> first = eventListener.waitFor(CONTAINER_ID, EventAction.START);
         first.cancel(false);

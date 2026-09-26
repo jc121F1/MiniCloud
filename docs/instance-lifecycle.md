@@ -1,6 +1,6 @@
 # Instance lifecycle reliability
 
-Status: the user confirmed the first checkpoint and its follow-up fix passed. The deletion-reservation checkpoint below is implemented and awaiting user-run tests and quality checks.
+Status: the user confirmed the revision guards, follow-up fix, and deletion-reservation checkpoint below passed tests and quality checks.
 
 Instance persistence uses an internal revision to reject stale updates and deletes. Rows without a revision remain readable and acquire revision 1 on their first successful update; newly created rows also start without a revision in this checkpoint. The revision is excluded from client JSON. State changes reuse the common store's conditional transaction support, including unique-name bookkeeping; supplied persistence conditions must not bypass revision or ownership checks. Older writers do not enforce these guards, so rollout must avoid concurrent writes from old and new versions.
 

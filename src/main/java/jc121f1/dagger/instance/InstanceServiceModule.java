@@ -20,6 +20,7 @@ import jc121f1.services.instance.compute.docker.DockerEventListener;
 import jc121f1.services.instance.events.EventBus;
 import jc121f1.services.instance.store.InstanceStore;
 import jc121f1.services.instance.store.nosql.DynamoDbInstanceStore;
+import jc121f1.runtime.RuntimeResources;
 
 import javax.inject.Singleton;
 import java.time.Duration;
@@ -31,8 +32,11 @@ public abstract class InstanceServiceModule {
     @Singleton
     public abstract InstanceService instanceService(InstanceServiceImpl instanceService);
 
-    @Binds @Singleton
-    public abstract ComputeBackend computeBackend(DockerComputeBackend dockerComputeBackend);
+    @Provides @Singleton
+    public static ComputeBackend computeBackend(DockerComputeBackend backend, DockerClient client,
+                                                 DockerEventListener listener, RuntimeResources resources) {
+        return resources.ownComposite(backend, client, listener);
+    }
 
     @Binds @Singleton
     public abstract InstanceStore instanceStore(DynamoDbInstanceStore instanceStore);
@@ -42,7 +46,8 @@ public abstract class InstanceServiceModule {
     public static DockerClient dockerClient(@RegistryUser String user,
                                             @RegistryPass String pass,
                                             @RegistryMail String mail,
-                                            @RegistryUrl String url) {
+                                            @RegistryUrl String url,
+                                            RuntimeResources resources) {
         DockerClientConfig config = DefaultDockerClientConfig.createDefaultConfigBuilder()
                 .withDockerHost("npipe:////./pipe/dockerDesktopLinuxEngine")
                 .withDockerTlsVerify(false)
@@ -60,15 +65,27 @@ public abstract class InstanceServiceModule {
                 .responseTimeout(Duration.of(45, ChronoUnit.SECONDS))
                 .build();
 
-        return DockerClientImpl.getInstance(config, client);
+        DockerClient dockerClient;
+        try {
+            dockerClient = DockerClientImpl.getInstance(config, client);
+        } catch (RuntimeException | Error failure) {
+            try {
+                client.close();
+            } catch (Exception closeFailure) {
+                failure.addSuppressed(closeFailure);
+            }
+            throw failure;
+        }
+        return resources.own(dockerClient, RuntimeResources.Phase.BACKEND);
     }
 
     @Provides @Singleton
     public static DockerEventListener eventListener(
             DockerClient dockerClient,
-            EventBus eventBus
+            EventBus eventBus,
+            RuntimeResources resources
     ) {
-        return new DockerEventListener(dockerClient, eventBus);
+        return resources.own(new DockerEventListener(dockerClient, eventBus), RuntimeResources.Phase.BACKEND);
     }
 
 }

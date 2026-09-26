@@ -89,7 +89,17 @@ public class DockerEventListener implements AutoCloseable {
             }
         };
 
-        dockerClient.eventsCmd().exec(callback);
+        try {
+            dockerClient.eventsCmd().exec(callback);
+        } catch (RuntimeException | Error failure) {
+            // Construction has not returned, so no runtime owner can close this stream yet.
+            try {
+                close();
+            } catch (Exception cleanupFailure) {
+                failure.addSuppressed(cleanupFailure);
+            }
+            throw failure;
+        }
     }
 
     public CompletableFuture<Event> waitFor(

@@ -1,6 +1,6 @@
 # Runtime lifecycle ownership
 
-Status: safe Docker teardown checkpoint passed user-run tests and quality checks. Event-deadline and repeatable-delete checkpoint awaits verification.
+Status: safe Docker teardown and event-deadline/repeatable-delete checkpoints passed user-run tests and quality checks. Application resource ownership below awaits verification.
 
 Closing the Docker backend releases its event subscription, event listener, and Docker client. It must not stop or remove customer containers. Explicit instance deletion remains the operation that removes a workload. Closing is repeat-safe, later calls are rejected, and client cleanup is attempted even when listener cleanup fails.
 
@@ -12,9 +12,13 @@ Start/stop operations retain command-completion gating: an expired event wait do
 
 Docker deletion is repeatable: an absent container mapping or a Docker not-found response counts as success. Other Docker failures propagate and preserve the mapping for retry. This supports retrying an instance deletion when its container removal succeeded but its subsequent metadata deletion failed.
 
-Full application resource ownership remains follow-up work: replace constructor side effects with explicit startup, give executors and clients clear scopes, stop accepting requests before teardown, bound shutdown waiting, and release all owned resources on partial startup failure. The backend does not own the injected executor and must not shut it down itself. These changes must preserve workloads and coordinate with instance reconciliation.
+`Main` now installs one shutdown hook for `ApplicationRuntime`. Every component registers its resource owner before constructing its web service or resolving handlers. Failed construction/startup closes the failed component's resources and all services already started. Normal shutdown stops all HTTP services before closing component resources. Web service start/close is repeat-safe and cannot restart after close; callers using `create()` directly still own the returned Javalin instance.
 
-Deadline tests advance futures manually through a package-private deadline seam; they do not sleep or wait for a real 60-second timer. Run the Docker backend/listener unit tests as part of the full suite:
+Each Dagger component shares one DynamoDB client and one virtual-thread executor. Providers register resources immediately. Docker client/listener remain individually owned if backend construction fails; once construction succeeds, their ownership transfers to the backend that already closes both. Component shutdown closes backend resources first, drains its executor for up to five seconds, requests interruption if needed, waits up to five more seconds, then closes data clients and remaining mDNS responders. Cleanup failures are logged and do not skip other resources. mDNS registration failure closes its partial responder; duplicate registration does not create another one.
+
+The executor wait is bounded; this is not a hard bound on the entire shutdown path. HTTP, SDK, stream callbacks, or mDNS close calls may still block. Closing the backend before draining workers can fail queued/in-flight operations, including writing `MISSING` from completion callbacks; DynamoDB remains open for those callbacks until the worker drain finishes. Customer containers are preserved. Constructor-side I/O and reconciliation still exist and may delay startup/shutdown coordination. Explicit asynchronous startup/readiness, preserving uncertain operation intent during shutdown, and a global teardown deadline remain follow-up work.
+
+Deadline tests advance futures manually through a package-private deadline seam; they do not sleep or wait for a real 60-second timer. Runtime tests cover HTTP-before-dependency ordering, partial-start rollback, ownership transfer, bounded executor shutdown/interruption, and repeated close. Web/mDNS tests use mocks without opening ports or multicast responders. Run the full suite:
 
 ```powershell
 .\gradlew.bat test checkstyleMain checkstyleTest spotbugsMain
