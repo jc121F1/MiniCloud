@@ -161,7 +161,7 @@ public class DockerComputeBackend implements ComputeBackend {
             });
             commandCompletion.handle((ignored, failure) -> null)
                     .thenCompose(ignored -> event.handle((received, failure) -> failure)
-                    .thenCompose(eventFailure -> observeContainerStatus(containerId)
+                    .thenCompose(eventFailure -> observeContainerStatus(containerId, false)
                             .handle((status, observationFailure) -> {
                                 if (observationFailure != null) {
                                     Throwable cause = eventFailure == null ? observationFailure : eventFailure;
@@ -291,7 +291,7 @@ public class DockerComputeBackend implements ComputeBackend {
             instanceToContainer.values().stream()
                     .filter(container -> container.getId().equals(event.containerId()))
                     .findFirst()
-                    .ifPresent(container -> observeContainerStatus(event.containerId())
+                    .ifPresent(container -> observeContainerStatus(event.containerId(), true)
                             .thenAccept(status -> {
                                 if (status == ComputeStatus.RUNNING) {
                                     publishInstanceHealthEvent(event);
@@ -311,15 +311,15 @@ public class DockerComputeBackend implements ComputeBackend {
 
         instanceToContainer.forEach((instanceId, container) -> {
             if (container.getId().equals(event.containerId())) {
-                observeContainerStatus(event.containerId()).exceptionally(error -> null);
+                observeContainerStatus(event.containerId(), true).exceptionally(error -> null);
             }
         });
     }
 
-    private CompletableFuture<ComputeStatus> observeContainerStatus(String containerId) {
+    private CompletableFuture<ComputeStatus> observeContainerStatus(String containerId, boolean asynchronous) {
         AtomicLong revision = observationRevisions.computeIfAbsent(containerId, ignored -> new AtomicLong());
         long observedRevision = revision.incrementAndGet();
-        return CompletableFuture.supplyAsync(() -> {
+        java.util.function.Supplier<ComputeStatus> inspect = () -> {
             ComputeStatus observed;
             try {
                 InspectContainerResponse response = dockerClient.inspectContainerCmd(containerId).exec();
@@ -347,7 +347,15 @@ public class DockerComputeBackend implements ComputeBackend {
                 });
             }
             return observed;
-        }, computeExecutor);
+        };
+        if (asynchronous) {
+            return CompletableFuture.supplyAsync(inspect, computeExecutor);
+        }
+        try {
+            return CompletableFuture.completedFuture(inspect.get());
+        } catch (RuntimeException failure) {
+            return CompletableFuture.failedFuture(failure);
+        }
     }
 
     private void publishInstanceHealthEvent(DockerContainerEvent event) {

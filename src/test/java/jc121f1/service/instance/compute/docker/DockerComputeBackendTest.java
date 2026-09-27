@@ -219,6 +219,7 @@ public class DockerComputeBackendTest {
                     CONTAINER_ID,
                     EventAction.START
             )).thenReturn(failedFuture);
+            Mockito.doReturn(false).when(inspectContainerState).getRunning();
 
             Assertions.assertThatThrownBy(() -> computeBackend.start(instance).join())
                     .isInstanceOf(RuntimeException.class);
@@ -229,6 +230,7 @@ public class DockerComputeBackendTest {
         void It_should_fail_the_wait_when_the_start_command_fails() {
             CompletableFuture<Event> pending = new CompletableFuture<>();
             Mockito.when(eventListener.waitFor(CONTAINER_ID, EventAction.START)).thenReturn(pending);
+            Mockito.doReturn(false).when(inspectContainerState).getRunning();
             Mockito.doThrow(new IllegalStateException("start failed")).when(startContainerCmd).exec();
             Assertions.assertThatThrownBy(() -> computeBackend.start(instance).join())
                     .hasRootCauseMessage("start failed");
@@ -297,6 +299,7 @@ public class DockerComputeBackendTest {
                     CONTAINER_ID,
                     EventAction.DIE
             )).thenReturn(failedFuture);
+            Mockito.doReturn(true).when(inspectContainerState).getRunning();
 
             Assertions.assertThatThrownBy(() -> computeBackend.stop(instance).join());
             Mockito.verify(dockerClient, Mockito.never()).stopContainerCmd(Mockito.anyString());
@@ -306,6 +309,7 @@ public class DockerComputeBackendTest {
         void It_should_fail_the_wait_when_the_stop_command_fails() {
             CompletableFuture<Event> pending = new CompletableFuture<>();
             Mockito.when(eventListener.waitFor(CONTAINER_ID, EventAction.DIE)).thenReturn(pending);
+            Mockito.doReturn(true).when(inspectContainerState).getRunning();
             Mockito.doThrow(new IllegalStateException("stop failed")).when(stopContainerCmd).exec();
             Assertions.assertThatThrownBy(() -> computeBackend.stop(instance).join())
                     .hasRootCauseMessage("stop failed");
@@ -669,6 +673,7 @@ public class DockerComputeBackendTest {
                     .thenReturn(List.of(container));
 
             DockerComputeBackend backend = newBackend();
+            Mockito.doReturn(true).when(inspectContainerState).getRunning();
 
             Mockito.when(dockerClient.startContainerCmd(CONTAINER_ID))
                     .thenReturn(startContainerCmd);

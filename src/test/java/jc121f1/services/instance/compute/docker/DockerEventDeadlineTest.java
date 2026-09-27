@@ -9,6 +9,7 @@ import com.github.dockerjava.api.model.Container;
 import com.github.dockerjava.api.model.Event;
 import com.github.dockerjava.api.model.EventActor;
 import jc121f1.model.instance.dao.Instance;
+import jc121f1.services.instance.compute.ComputeOutcomeException;
 import jc121f1.services.instance.events.EventBus;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -57,7 +58,7 @@ class DockerEventDeadlineTest {
             expire(listener.lastWait);
             Assertions.assertThat(operation).isNotDone();
             task.get().run();
-            Assertions.assertThatThrownBy(operation::join).hasCauseInstanceOf(TimeoutException.class);
+            Assertions.assertThatThrownBy(operation::join).hasCauseInstanceOf(ComputeOutcomeException.class);
             Mockito.verify(client, Mockito.never()).stopContainerCmd(Mockito.anyString());
         }
     }
@@ -77,7 +78,7 @@ class DockerEventDeadlineTest {
                 return null;
             }).when(command).exec();
             task.get().run();
-            Assertions.assertThatThrownBy(operation::join).hasCauseInstanceOf(TimeoutException.class);
+            Assertions.assertThatThrownBy(operation::join).hasCauseInstanceOf(ComputeOutcomeException.class);
             Mockito.verify(command).exec();
         }
     }
