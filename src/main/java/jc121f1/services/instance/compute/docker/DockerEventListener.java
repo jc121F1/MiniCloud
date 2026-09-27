@@ -17,6 +17,10 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -27,24 +31,50 @@ public class DockerEventListener implements AutoCloseable {
 
     private final DockerClient dockerClient;
     private final EventBus eventBus;
-    private ResultCallback.Adapter<Event> callback;
+    private volatile ResultCallback.Adapter<Event> callback;
     private final AtomicReference<Throwable> terminalFailure = new AtomicReference<>();
     private final AtomicBoolean closed = new AtomicBoolean();
     private final Duration eventTimeout;
+    private final ScheduledExecutorService reconnectExecutor;
+    private final long initialReconnectDelayMillis;
+    private final long maximumReconnectDelayMillis;
+    private final AtomicReference<Thread> reconnectThread = new AtomicReference<>();
+    private final AtomicBoolean reconnectScheduled = new AtomicBoolean();
+    private volatile long reconnectDelayMillis;
+    private volatile long generation;
     private volatile boolean initialized;
 
     @Inject
     public DockerEventListener(DockerClient dockerClient, EventBus eventBus) {
-        this(dockerClient, eventBus, Duration.ofSeconds(60));
+        this(dockerClient, eventBus, Duration.ofSeconds(60), Duration.ofMillis(100), Duration.ofSeconds(5));
     }
 
     DockerEventListener(DockerClient dockerClient, EventBus eventBus, Duration eventTimeout) throws IllegalArgumentException {
+        this(dockerClient, eventBus, eventTimeout, Duration.ofMillis(100), Duration.ofSeconds(5));
+    }
+
+    DockerEventListener(DockerClient dockerClient, EventBus eventBus, Duration eventTimeout,
+                        Duration initialReconnectDelay, Duration maximumReconnectDelay) {
         if (Objects.requireNonNull(eventTimeout, "eventTimeout").toMillis() <= 0) {
             throw new IllegalArgumentException("Event timeout must be at least one millisecond");
+        }
+        if (initialReconnectDelay.isNegative() || initialReconnectDelay.isZero()
+                || maximumReconnectDelay.compareTo(initialReconnectDelay) < 0) {
+            throw new IllegalArgumentException("Invalid Docker event reconnect delays");
         }
         this.dockerClient = dockerClient;
         this.eventBus = eventBus;
         this.eventTimeout = eventTimeout;
+        this.initialReconnectDelayMillis = initialReconnectDelay.toMillis();
+        this.maximumReconnectDelayMillis = maximumReconnectDelay.toMillis();
+        this.reconnectDelayMillis = initialReconnectDelayMillis;
+        ThreadFactory factory = task -> {
+            Thread thread = new Thread(task, "docker-event-reconnect");
+            thread.setDaemon(true);
+            reconnectThread.set(thread);
+            return thread;
+        };
+        reconnectExecutor = Executors.newSingleThreadScheduledExecutor(factory);
     }
 
     public synchronized void initialize() {
@@ -54,13 +84,28 @@ public class DockerEventListener implements AutoCloseable {
         if (initialized) {
             return;
         }
-        callback = new ResultCallback.Adapter<>() {
+        try {
+            connect();
+            initialized = true;
+        } catch (RuntimeException | Error failure) {
+            reconnectExecutor.shutdownNow();
+            throw failure;
+        }
+    }
+
+    private synchronized void connect() {
+        if (closed.get()) {
+            return;
+        }
+        long thisGeneration = ++generation;
+        ResultCallback.Adapter<Event> newCallback = new ResultCallback.Adapter<>() {
 
             @Override
             public void onNext(Event event) {
-                if (terminalFailure.get() != null) {
+                if (closed.get() || thisGeneration != generation) {
                     return;
                 }
+                reconnectDelayMillis = initialReconnectDelayMillis;
                 Optional<EventAction> action =
                         EventAction.fromValue(event.getAction());
 
@@ -86,29 +131,53 @@ public class DockerEventListener implements AutoCloseable {
 
             @Override
             public void onError(Throwable throwable) {
-                terminate(throwable);
+                streamFailed(thisGeneration, throwable);
             }
 
             @Override
             public void onComplete() {
-                terminate(new IllegalStateException("Docker event stream ended"));
+                streamFailed(thisGeneration, new IllegalStateException("Docker event stream ended"));
             }
         };
 
         try {
-            dockerClient.eventsCmd().exec(callback);
-            if (terminalFailure.get() != null) {
-                throw new IllegalStateException("Docker event stream failed during startup", terminalFailure.get());
-            }
-            initialized = true;
+            callback = newCallback;
+            terminalFailure.set(null);
+            dockerClient.eventsCmd().exec(newCallback);
         } catch (RuntimeException | Error failure) {
             // A failed startup may already have opened a stream.
             try {
-                close();
+                newCallback.close();
             } catch (Exception cleanupFailure) {
                 failure.addSuppressed(cleanupFailure);
             }
             throw failure;
+        }
+    }
+
+    private void streamFailed(long failedGeneration, Throwable failure) {
+        if (closed.get() || failedGeneration != generation) {
+            return;
+        }
+        terminalFailure.set(failure);
+        pendingEvents.forEach((key, future) -> future.completeExceptionally(failure));
+        if (reconnectScheduled.compareAndSet(false, true)) {
+            long delay = reconnectDelayMillis;
+            reconnectDelayMillis = Math.min(maximumReconnectDelayMillis, Math.max(delay + 1, delay * 2));
+            try {
+                reconnectExecutor.schedule(() -> {
+                    reconnectScheduled.set(false);
+                    if (!closed.get()) {
+                        try {
+                            connect();
+                        } catch (RuntimeException | Error failureToReconnect) {
+                            streamFailed(generation, failureToReconnect);
+                        }
+                    }
+                }, delay, TimeUnit.MILLISECONDS);
+            } catch (RejectedExecutionException ignored) {
+                reconnectScheduled.set(false);
+            }
         }
     }
 
@@ -160,6 +229,15 @@ public class DockerEventListener implements AutoCloseable {
             return;
         }
         terminate(new CancellationException("Docker event listener is closed"));
+        reconnectExecutor.shutdownNow();
+        Thread thread = reconnectThread.get();
+        if (thread != null && thread != Thread.currentThread()) {
+            try {
+                thread.join(TimeUnit.SECONDS.toMillis(1));
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
         if (callback != null) {
             callback.close();
         }

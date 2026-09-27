@@ -15,12 +15,16 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.awaitility.Awaitility;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 
 import java.io.IOException;
 import java.io.Closeable;
+import java.time.Duration;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CompletableFuture;
 
 @MiniCloudTest
@@ -202,6 +206,35 @@ public class DockerEventListenerTest {
 
     @Nested
     class When_the_event_stream_fails {
+
+        @Test
+        void It_should_reconnect_and_ignore_events_from_the_failed_generation() throws IOException {
+            List<ResultCallback.Adapter<Event>> callbacks = new CopyOnWriteArrayList<>();
+            Mockito.doAnswer(call -> {
+                @SuppressWarnings("unchecked")
+                ResultCallback.Adapter<Event> next = call.getArgument(0);
+                callbacks.add(next);
+                return null;
+            }).when(eventsCmd).exec(Mockito.any());
+
+            eventListener.close();
+            eventListener = new DockerEventListener(dockerClient, eventBus);
+            eventListener.initialize();
+            Assertions.assertThat(callbacks).hasSize(1);
+            CompletableFuture<Event> pending = eventListener.waitFor(CONTAINER_ID, EventAction.START);
+
+            callbacks.get(0).onError(new IOException("stream reset"));
+            Assertions.assertThat(pending).isCompletedExceptionally();
+            Awaitility.await().atMost(Duration.ofSeconds(3)).untilAsserted(() ->
+                    Assertions.assertThat(callbacks).hasSize(2));
+
+            CompletableFuture<Event> afterReconnect = eventListener.waitFor(CONTAINER_ID, EventAction.START);
+            callbacks.get(0).onNext(event(CONTAINER_ID, "start"));
+            Assertions.assertThat(afterReconnect).isNotDone();
+            Event recoveredEvent = event(CONTAINER_ID, "start");
+            callbacks.get(1).onNext(recoveredEvent);
+            Assertions.assertThat(afterReconnect).isCompletedWithValue(recoveredEvent);
+        }
 
         @Test
         void It_should_complete_pending_futures_exceptionally() {
