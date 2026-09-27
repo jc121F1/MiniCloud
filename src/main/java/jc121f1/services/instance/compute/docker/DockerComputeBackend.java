@@ -3,6 +3,7 @@ package jc121f1.services.instance.compute.docker;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.CreateContainerCmd;
 import com.github.dockerjava.api.command.CreateContainerResponse;
+import com.github.dockerjava.api.command.InspectContainerResponse;
 import com.github.dockerjava.api.model.Container;
 import com.github.dockerjava.api.model.Event;
 import com.github.dockerjava.api.model.HostConfig;
@@ -12,6 +13,7 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import jc121f1.model.instance.dao.DockerContainer;
 import jc121f1.model.instance.dao.Instance;
 import jc121f1.services.instance.compute.ComputeBackend;
+import jc121f1.services.instance.compute.ComputeOutcomeException;
 import jc121f1.model.instance.ComputeStatus;
 import jc121f1.services.instance.events.EventBus;
 import jc121f1.services.instance.events.InstanceHealthEvent;
@@ -23,6 +25,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -34,6 +37,7 @@ public class DockerComputeBackend implements ComputeBackend {
 
     private final Map<String, DockerContainer> instanceToContainer =
             new ConcurrentHashMap<>();
+    private final Map<String, AtomicLong> observationRevisions = new ConcurrentHashMap<>();
 
     @SuppressFBWarnings(
             value = "EI_EXPOSE_REP2",
@@ -122,7 +126,7 @@ public class DockerComputeBackend implements ComputeBackend {
         requireOpen();
         String containerId = getContainerId(instance);
 
-        return commandAwaitingEvent(containerId, EventAction.START,
+        return commandAwaitingEvent(containerId, EventAction.START, ComputeStatus.RUNNING,
                 () -> dockerClient.startContainerCmd(containerId).exec());
     }
 
@@ -131,15 +135,13 @@ public class DockerComputeBackend implements ComputeBackend {
         requireOpen();
         String containerId = getContainerId(instance);
 
-        return commandAwaitingEvent(containerId, EventAction.DIE,
+        return commandAwaitingEvent(containerId, EventAction.DIE, ComputeStatus.STOPPED,
                 () -> dockerClient.stopContainerCmd(containerId).exec());
     }
 
-    private CompletableFuture<Void> commandAwaitingEvent(String containerId, EventAction action, Runnable command) {
+    private CompletableFuture<Void> commandAwaitingEvent(String containerId, EventAction action,
+                                                         ComputeStatus expected, Runnable command) {
         CompletableFuture<Event> event = eventListener.waitFor(containerId, action);
-        if (event.isCompletedExceptionally()) {
-            return event.thenApply(ignored -> null);
-        }
         CompletableFuture<Void> result = new CompletableFuture<>();
         result.whenComplete((ignored, failure) -> {
             if (result.isCancelled()) {
@@ -147,17 +149,32 @@ public class DockerComputeBackend implements ComputeBackend {
             }
         });
         try {
-            CompletableFuture.runAsync(() -> {
+            CompletableFuture<Void> commandCompletion = CompletableFuture.runAsync(() -> {
                 if (!result.isDone() && !event.isCompletedExceptionally()) {
                     command.run();
                 }
-            }, computeExecutor)
-                    .whenComplete((ignored, failure) -> {
-                        if (failure != null) {
-                            event.completeExceptionally(failure);
-                        }
-                    })
-                    .thenCompose(ignored -> event.thenApply(received -> null))
+            }, computeExecutor);
+            commandCompletion.whenComplete((ignored, failure) -> {
+                if (failure != null) {
+                    event.completeExceptionally(failure);
+                }
+            });
+            commandCompletion.handle((ignored, failure) -> null)
+                    .thenCompose(ignored -> event.handle((received, failure) -> failure)
+                    .thenCompose(eventFailure -> observeContainerStatus(containerId)
+                            .handle((status, observationFailure) -> {
+                                if (observationFailure != null) {
+                                    Throwable cause = eventFailure == null ? observationFailure : eventFailure;
+                                    return CompletableFuture.<Void>failedFuture(new ComputeOutcomeException(
+                                            "Unable to determine Docker command outcome", null, cause));
+                                }
+                                if (status == expected) {
+                                    return CompletableFuture.<Void>completedFuture(null);
+                                }
+                                return CompletableFuture.<Void>failedFuture(new ComputeOutcomeException(
+                                        "Docker command resulted in " + status + " instead of " + expected,
+                                        status, eventFailure));
+                            }).thenCompose(outcome -> outcome)))
                     .whenComplete((ignored, failure) -> {
                         if (failure == null) {
                             result.complete(null);
@@ -271,37 +288,66 @@ public class DockerComputeBackend implements ComputeBackend {
         }
         if (event.action() == EventAction.HEALTHY
                 || event.action() == EventAction.UNHEALTHY) {
-            publishInstanceHealthEvent(event);
+            instanceToContainer.values().stream()
+                    .filter(container -> container.getId().equals(event.containerId()))
+                    .findFirst()
+                    .ifPresent(container -> observeContainerStatus(event.containerId())
+                            .thenAccept(status -> {
+                                if (status == ComputeStatus.RUNNING) {
+                                    publishInstanceHealthEvent(event);
+                                }
+                            }).exceptionally(error -> null));
             return;
         }
 
-        ComputeStatus status = switch (event.action()) {
-            case START -> ComputeStatus.RUNNING;
-            case DIE -> ComputeStatus.STOPPED;
-            default -> null;
+        boolean lifecycleEvent = switch (event.action()) {
+            case START, DIE -> true;
+            default -> false;
         };
 
-        if (status == null) {
+        if (!lifecycleEvent) {
             return;
         }
 
         instanceToContainer.forEach((instanceId, container) -> {
             if (container.getId().equals(event.containerId())) {
-                instanceToContainer.computeIfPresent(instanceId,
-                        (ignored, current) -> {
-                            if (!current.getId().equals(event.containerId())) {
+                observeContainerStatus(event.containerId()).exceptionally(error -> null);
+            }
+        });
+    }
+
+    private CompletableFuture<ComputeStatus> observeContainerStatus(String containerId) {
+        AtomicLong revision = observationRevisions.computeIfAbsent(containerId, ignored -> new AtomicLong());
+        long observedRevision = revision.incrementAndGet();
+        return CompletableFuture.supplyAsync(() -> {
+            ComputeStatus observed;
+            try {
+                InspectContainerResponse response = dockerClient.inspectContainerCmd(containerId).exec();
+                observed = Boolean.TRUE.equals(response.getState().getRunning())
+                        ? ComputeStatus.RUNNING : ComputeStatus.STOPPED;
+            } catch (NotFoundException missing) {
+                observed = ComputeStatus.MISSING;
+            }
+            ComputeStatus finalObserved = observed;
+            if (revision.get() == observedRevision) {
+                instanceToContainer.forEach((instanceId, original) -> {
+                    if (original.getId().equals(containerId)) {
+                        instanceToContainer.computeIfPresent(instanceId, (ignored, current) -> {
+                            if (!current.getId().equals(containerId)) {
                                 return current;
                             }
-
-                            return DockerContainer.builder()
+                            return finalObserved == ComputeStatus.MISSING ? null : DockerContainer.builder()
                                     .id(current.getId())
                                     .name(current.getName())
                                     .instanceId(current.getInstanceId())
-                                    .status(status)
+                                    .status(finalObserved)
                                     .build();
                         });
+                    }
+                });
             }
-        });
+            return observed;
+        }, computeExecutor);
     }
 
     private void publishInstanceHealthEvent(DockerContainerEvent event) {

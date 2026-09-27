@@ -1,6 +1,8 @@
 package jc121f1.service.instance;
 
 import jc121f1.model.instance.dao.Instance;
+import jc121f1.model.instance.ComputeStatus;
+import jc121f1.model.instance.InstanceState;
 import jc121f1.services.authz.AuthorizationService;
 import jc121f1.services.instance.InstanceServiceImpl;
 import jc121f1.services.instance.compute.ComputeBackend;
@@ -14,6 +16,7 @@ import org.mockito.Mockito;
 
 import java.time.Clock;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -67,6 +70,38 @@ class InstanceStartupTest {
             rows.complete(List.of());
             service.close();
         }
+    }
+
+    @Test
+    void restartRecoveryCompletesAnAlreadyRunningStartWithoutRecreatingItsContainer() {
+        Instance starting = Instance.builder().id("i-1").name("example").accountId("a-1")
+                .state(InstanceState.STARTING).revision(3L).build();
+        Instance running = starting.toBuilder().state(InstanceState.RUNNING).build();
+        Mockito.when(store.list()).thenReturn(CompletableFuture.completedFuture(List.of(starting)));
+        Mockito.when(backend.describeStatuses(List.of(starting))).thenReturn(Map.of("i-1", ComputeStatus.RUNNING));
+        Mockito.when(store.update(starting, running)).thenReturn(CompletableFuture.completedFuture(running));
+
+        service.initialize();
+
+        Mockito.verify(store).update(starting, running);
+        Mockito.verify(backend, Mockito.never()).create(Mockito.any());
+        Mockito.verify(backend, Mockito.never()).start(Mockito.any());
+    }
+
+    @Test
+    void restartRecoveryDoesNotRecreateAContainerForAnInterruptedStop() {
+        Instance stopping = Instance.builder().id("i-2").name("example").accountId("a-1")
+                .state(InstanceState.STOPPING).revision(4L).build();
+        Instance missing = stopping.toBuilder().state(InstanceState.MISSING).build();
+        Mockito.when(store.list()).thenReturn(CompletableFuture.completedFuture(List.of(stopping)));
+        Mockito.when(backend.describeStatuses(List.of(stopping))).thenReturn(Map.of("i-2", ComputeStatus.MISSING));
+        Mockito.when(store.update(stopping, missing)).thenReturn(CompletableFuture.completedFuture(missing));
+
+        service.initialize();
+
+        Mockito.verify(store).update(stopping, missing);
+        Mockito.verify(backend, Mockito.never()).create(Mockito.any());
+        Mockito.verify(backend, Mockito.never()).stop(Mockito.any());
     }
 
     @Test

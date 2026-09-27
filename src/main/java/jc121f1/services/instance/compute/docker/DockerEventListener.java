@@ -102,7 +102,7 @@ public class DockerEventListener implements AutoCloseable {
 
             @Override
             public void onNext(Event event) {
-                if (closed.get() || thisGeneration != generation) {
+                if (closed.get() || thisGeneration != generation || terminalFailure.get() != null) {
                     return;
                 }
                 reconnectDelayMillis = initialReconnectDelayMillis;

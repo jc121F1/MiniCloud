@@ -16,6 +16,7 @@ import jc121f1.model.instance.api.request.StartInstanceRequest;
 import jc121f1.model.instance.api.request.StopInstanceRequest;
 import jc121f1.model.instance.dao.Instance;
 import jc121f1.services.instance.compute.ComputeBackend;
+import jc121f1.services.instance.compute.ComputeOutcomeException;
 import jc121f1.model.instance.ComputeStatus;
 import jc121f1.services.instance.events.EventBus;
 import jc121f1.services.instance.events.InstanceHealthEvent;
@@ -326,7 +327,26 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
                 log.warn("Backend operation failed for instance {}", instance.id(), error);
             }
             try {
-                setInstanceState(instance, error == null ? success : InstanceState.MISSING);
+                InstanceState completionState = success;
+                if (error != null) {
+                    Throwable cause = error;
+                    while (cause instanceof CompletionException && cause.getCause() != null) {
+                        cause = cause.getCause();
+                    }
+                    if (cause instanceof ComputeOutcomeException outcome) {
+                        if (outcome.observedStatus() == null) {
+                            return null;
+                        }
+                        completionState = switch (outcome.observedStatus()) {
+                            case RUNNING -> InstanceState.RUNNING;
+                            case STOPPED -> InstanceState.STOPPED;
+                            case MISSING -> InstanceState.MISSING;
+                        };
+                    } else {
+                        completionState = InstanceState.MISSING;
+                    }
+                }
+                setInstanceState(instance, completionState);
             } catch (RuntimeException stateError) {
                 // A stale completion must not overwrite a newer operation, even when its backend failed.
                 log.warn("Unable to record operation completion for instance {}", instance.id(), stateError);
@@ -478,7 +498,9 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
     private CompletableFuture<Void> reconcileStopping(
             Instance instance,
             ComputeStatus status) {
-
+        if (status == ComputeStatus.MISSING) {
+            return observeOperation(instance, CompletableFuture.completedFuture(null), InstanceState.MISSING);
+        }
         return observeOperation(instance, invokeBackend(() -> reconcileToStopped(instance, status)), InstanceState.STOPPED);
     }
 
@@ -488,9 +510,6 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
 
     private CompletableFuture<Void> reconcileToStopped(Instance instance, ComputeStatus status) {
         switch (status) {
-            case MISSING -> {
-                return createInstance(instance);
-            }
             case RUNNING -> {
                 return computeBackend.stop(instance);
             }

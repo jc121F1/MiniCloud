@@ -9,6 +9,8 @@ import jc121f1.model.instance.dao.Instance;
 import jc121f1.services.authz.AuthorizationService;
 import jc121f1.services.instance.InstanceServiceImpl;
 import jc121f1.services.instance.compute.ComputeBackend;
+import jc121f1.services.instance.compute.ComputeOutcomeException;
+import jc121f1.model.instance.ComputeStatus;
 import jc121f1.services.instance.events.EventBus;
 import jc121f1.services.instance.exceptions.ConflictException;
 import jc121f1.services.instance.store.InstanceStore;
@@ -75,6 +77,38 @@ class InstanceLifecycleFailureTest {
         Mockito.verify(store).update(Mockito.eq(starting), written.capture());
         Assertions.assertThat(written.getValue().state()).isEqualTo(InstanceState.MISSING);
         Assertions.assertThat(written.getValue().revision()).isEqualTo(2L);
+    }
+
+    @Test
+    void unresolvedCommandOutcomeKeepsTheReservationForStartupRecovery() {
+        Instance starting = stopped.toBuilder().state(InstanceState.STARTING).revision(2L).build();
+        Mockito.when(store.update(Mockito.any(), Mockito.any()))
+                .thenReturn(CompletableFuture.completedFuture(starting));
+        Mockito.when(backend.start(starting)).thenReturn(CompletableFuture.failedFuture(
+                new ComputeOutcomeException("Docker state unavailable", null,
+                        new IllegalStateException("inspect failed"))));
+
+        service.start(caller, startRequest());
+
+        Mockito.verify(store, Mockito.times(1)).update(Mockito.any(), Mockito.any());
+    }
+
+    @Test
+    void observedCommandOutcomeWritesTheActualStableState() {
+        Instance starting = stopped.toBuilder().state(InstanceState.STARTING).revision(2L).build();
+        Instance observedStopped = starting.toBuilder().state(InstanceState.STOPPED).build();
+        Mockito.when(store.update(Mockito.any(), Mockito.any()))
+                .thenReturn(CompletableFuture.completedFuture(starting))
+                .thenReturn(CompletableFuture.completedFuture(observedStopped));
+        Mockito.when(backend.start(starting)).thenReturn(CompletableFuture.failedFuture(
+                new ComputeOutcomeException("Docker remained stopped", ComputeStatus.STOPPED,
+                        new IllegalStateException("start timed out"))));
+
+        service.start(caller, startRequest());
+
+        ArgumentCaptor<Instance> written = ArgumentCaptor.forClass(Instance.class);
+        Mockito.verify(store, Mockito.times(2)).update(Mockito.any(), written.capture());
+        Assertions.assertThat(written.getAllValues().get(1).state()).isEqualTo(InstanceState.STOPPED);
     }
 
     @Test

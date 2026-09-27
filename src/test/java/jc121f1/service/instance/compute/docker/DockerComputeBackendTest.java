@@ -4,6 +4,8 @@ import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.CreateContainerCmd;
 import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.command.ListContainersCmd;
+import com.github.dockerjava.api.command.InspectContainerCmd;
+import com.github.dockerjava.api.command.InspectContainerResponse;
 import com.github.dockerjava.api.command.RemoveContainerCmd;
 import com.github.dockerjava.api.command.StartContainerCmd;
 import com.github.dockerjava.api.command.StopContainerCmd;
@@ -21,6 +23,7 @@ import jc121f1.services.instance.compute.docker.EventAction;
 import jc121f1.services.instance.events.EventBus;
 import jc121f1.services.instance.events.InstanceHealthEvent;
 import org.assertj.core.api.Assertions;
+import org.awaitility.Awaitility;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -75,6 +78,15 @@ public class DockerComputeBackendTest {
     private ListContainersCmd listContainersCmd;
 
     @Mock
+    private InspectContainerCmd inspectContainerCmd;
+
+    @Mock
+    private InspectContainerResponse inspectContainerResponse;
+
+    @Mock
+    private InspectContainerResponse.ContainerState inspectContainerState;
+
+    @Mock
     private EventBus eventBus;
 
     private Executor executor;
@@ -87,6 +99,10 @@ public class DockerComputeBackendTest {
         Mockito.when(dockerClient.listContainersCmd()).thenReturn(listContainersCmd);
         Mockito.when(listContainersCmd.withShowAll(true)).thenReturn(listContainersCmd);
         Mockito.when(listContainersCmd.exec()).thenReturn(List.of());
+        Mockito.lenient().when(dockerClient.inspectContainerCmd(Mockito.anyString())).thenReturn(inspectContainerCmd);
+        Mockito.lenient().when(inspectContainerCmd.exec()).thenReturn(inspectContainerResponse);
+        Mockito.lenient().when(inspectContainerResponse.getState()).thenReturn(inspectContainerState);
+        Mockito.lenient().when(inspectContainerState.getRunning()).thenReturn(false);
 
         Mockito.lenient().when(instance.id()).thenReturn(INSTANCE_ID);
         Mockito.lenient().when(instance.cpu()).thenReturn(CPU);
@@ -150,6 +166,7 @@ public class DockerComputeBackendTest {
         @BeforeEach
         void setup() {
             computeBackend = newBackend();
+            Mockito.lenient().when(inspectContainerState.getRunning()).thenReturn(true);
 
             createContainer();
 
@@ -227,6 +244,7 @@ public class DockerComputeBackendTest {
         @BeforeEach
         void setup() {
             computeBackend = newBackend();
+            Mockito.lenient().when(inspectContainerState.getRunning()).thenReturn(false);
 
             createContainer();
 
@@ -508,6 +526,7 @@ public class DockerComputeBackendTest {
                     .thenReturn(List.of(container));
 
             DockerComputeBackend backend = newBackend();
+            Mockito.lenient().when(inspectContainerState.getRunning()).thenReturn(true);
 
             Assertions.assertThat(
                     backend.describeStatuses(List.of(instance))
@@ -700,29 +719,29 @@ public class DockerComputeBackendTest {
         @Test
         void It_should_update_status_for_start_and_die_events() {
             Consumer<DockerContainerEvent> consumer = dockerEventConsumer();
+            Mockito.doReturn(false).when(inspectContainerState).getRunning();
 
             consumer.accept(new DockerContainerEvent(CONTAINER_ID, EventAction.DIE));
+            Awaitility.await().untilAsserted(() -> Assertions.assertThat(computeBackend.describeStatuses(List.of(instance)))
+                    .containsEntry(INSTANCE_ID, ComputeStatus.STOPPED));
 
-            Assertions.assertThat(computeBackend.describeStatuses(List.of(instance)))
-                    .containsEntry(INSTANCE_ID, ComputeStatus.STOPPED);
-
+            Mockito.doReturn(true).when(inspectContainerState).getRunning();
             consumer.accept(new DockerContainerEvent(CONTAINER_ID, EventAction.START));
 
-            Assertions.assertThat(computeBackend.describeStatuses(List.of(instance)))
-                    .containsEntry(INSTANCE_ID, ComputeStatus.RUNNING);
+            Awaitility.await().untilAsserted(() -> Assertions.assertThat(computeBackend.describeStatuses(List.of(instance)))
+                    .containsEntry(INSTANCE_ID, ComputeStatus.RUNNING));
         }
 
         @Test
         void It_should_publish_an_instance_health_event() {
+            Mockito.when(inspectContainerState.getRunning()).thenReturn(true);
             dockerEventConsumer().accept(new DockerContainerEvent(
                     CONTAINER_ID,
                     EventAction.UNHEALTHY
             ));
 
-            Mockito.verify(eventBus).publish(new InstanceHealthEvent(
-                    INSTANCE_ID,
-                    EventAction.UNHEALTHY
-            ));
+            Awaitility.await().untilAsserted(() -> Mockito.verify(eventBus).publish(new InstanceHealthEvent(
+                    INSTANCE_ID, EventAction.UNHEALTHY)));
             Assertions.assertThat(computeBackend.describeStatuses(List.of(instance)))
                     .containsEntry(INSTANCE_ID, ComputeStatus.RUNNING);
         }

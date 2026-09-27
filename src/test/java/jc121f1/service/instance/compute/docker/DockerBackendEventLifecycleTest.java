@@ -3,6 +3,8 @@ package jc121f1.service.instance.compute.docker;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.api.command.EventsCmd;
+import com.github.dockerjava.api.command.InspectContainerCmd;
+import com.github.dockerjava.api.command.InspectContainerResponse;
 import com.github.dockerjava.api.command.ListContainersCmd;
 import com.github.dockerjava.api.command.StopContainerCmd;
 import com.github.dockerjava.api.model.Container;
@@ -29,6 +31,7 @@ class DockerBackendEventLifecycleTest {
     private final DockerClient client = Mockito.mock(DockerClient.class);
     private final EventBus events = Mockito.mock(EventBus.class);
     private final Instance instance = Mockito.mock(Instance.class);
+    private final AtomicBoolean containerRunning = new AtomicBoolean(true);
     private DockerEventListener listener;
     private ResultCallback.Adapter<Event> callback;
 
@@ -43,6 +46,7 @@ class DockerBackendEventLifecycleTest {
                     .hasRootCauseMessage("stop failed");
             CompletableFuture<Void> retry = backend.stop(instance);
             Assertions.assertThat(retry).isNotDone();
+            containerRunning.set(false);
             callback.onNext(stoppedEvent());
             Assertions.assertThat(retry).isCompleted();
             Mockito.verify(command, Mockito.times(2)).exec();
@@ -69,6 +73,35 @@ class DockerBackendEventLifecycleTest {
         }
     }
 
+    @Test
+    void commandFailureIsResolvedWhenInspectionShowsTheRequestedState() throws Exception {
+        try (DockerComputeBackend backend = backend(Runnable::run)) {
+            containerRunning.set(false);
+            StopContainerCmd command = Mockito.mock(StopContainerCmd.class);
+            Mockito.when(client.stopContainerCmd("container-1")).thenReturn(command);
+            Mockito.doThrow(new IllegalStateException("transport timed out")).when(command).exec();
+
+            backend.stop(instance).join();
+            Mockito.verify(command).exec();
+            Assertions.assertThat(backend.describeStatuses(List.of(instance)))
+                    .containsEntry("i-1", jc121f1.model.instance.ComputeStatus.STOPPED);
+        }
+    }
+
+    @Test
+    void lateLifecycleEventRefreshesDockerStateBeforeUpdatingTheCache() throws Exception {
+        try (DockerComputeBackend backend = backend(Runnable::run)) {
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<java.util.function.Consumer<DockerContainerEvent>> captor =
+                    ArgumentCaptor.forClass(java.util.function.Consumer.class);
+            Mockito.verify(events).subscribe(Mockito.eq(DockerContainerEvent.class), captor.capture());
+
+            captor.getValue().accept(new DockerContainerEvent("container-1", EventAction.DIE));
+            Assertions.assertThat(backend.describeStatuses(List.of(instance)))
+                    .containsEntry("i-1", jc121f1.model.instance.ComputeStatus.RUNNING);
+        }
+    }
+
     @SuppressWarnings("unchecked")
     private DockerComputeBackend backend(Executor executor) {
         EventsCmd eventCommand = Mockito.mock(EventsCmd.class);
@@ -89,6 +122,13 @@ class DockerBackendEventLifecycleTest {
         Mockito.when(list.withShowAll(true)).thenReturn(list);
         Mockito.when(list.exec()).thenReturn(List.of(container));
         Mockito.when(instance.id()).thenReturn("i-1");
+        InspectContainerCmd inspect = Mockito.mock(InspectContainerCmd.class);
+        InspectContainerResponse response = Mockito.mock(InspectContainerResponse.class);
+        InspectContainerResponse.ContainerState state = Mockito.mock(InspectContainerResponse.ContainerState.class);
+        Mockito.when(client.inspectContainerCmd(Mockito.anyString())).thenReturn(inspect);
+        Mockito.when(inspect.exec()).thenReturn(response);
+        Mockito.when(response.getState()).thenReturn(state);
+        Mockito.when(state.getRunning()).thenAnswer(ignored -> containerRunning.get());
         DockerComputeBackend backend = new DockerComputeBackend(client, listener, events, executor);
         backend.initialize();
         return backend;
