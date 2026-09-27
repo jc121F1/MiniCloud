@@ -11,6 +11,7 @@ import com.github.dockerjava.api.model.Container;
 import com.github.dockerjava.api.model.Event;
 import com.github.dockerjava.api.model.EventActor;
 import jc121f1.model.instance.dao.Instance;
+import jc121f1.services.instance.compute.docker.DockerContainerEvent;
 import jc121f1.services.instance.compute.docker.DockerComputeBackend;
 import jc121f1.services.instance.compute.docker.DockerEventListener;
 import jc121f1.services.instance.compute.docker.EventAction;
@@ -26,6 +27,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
 class DockerBackendEventLifecycleTest {
     private final DockerClient client = Mockito.mock(DockerClient.class);
@@ -89,11 +91,10 @@ class DockerBackendEventLifecycleTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
     void lateLifecycleEventRefreshesDockerStateBeforeUpdatingTheCache() throws Exception {
         try (DockerComputeBackend backend = backend(Runnable::run)) {
-            @SuppressWarnings("unchecked")
-            ArgumentCaptor<java.util.function.Consumer<DockerContainerEvent>> captor =
-                    ArgumentCaptor.forClass(java.util.function.Consumer.class);
+            ArgumentCaptor<Consumer<DockerContainerEvent>> captor = ArgumentCaptor.forClass(Consumer.class);
             Mockito.verify(events).subscribe(Mockito.eq(DockerContainerEvent.class), captor.capture());
 
             captor.getValue().accept(new DockerContainerEvent("container-1", EventAction.DIE));
