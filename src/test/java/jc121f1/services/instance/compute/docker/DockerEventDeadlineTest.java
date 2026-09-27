@@ -128,6 +128,7 @@ class DockerEventDeadlineTest {
         EventsCmd eventCommand = Mockito.mock(EventsCmd.class);
         Mockito.when(client.eventsCmd()).thenReturn(eventCommand);
         listener = new ManualDeadlineListener(client, events);
+        listener.initialize();
         ArgumentCaptor<ResultCallback.Adapter<Event>> captor = ArgumentCaptor.forClass(ResultCallback.Adapter.class);
         Mockito.verify(eventCommand).exec(captor.capture());
         callback = captor.getValue();
@@ -141,7 +142,9 @@ class DockerEventDeadlineTest {
         Mockito.when(list.withShowAll(true)).thenReturn(list);
         Mockito.when(list.exec()).thenReturn(List.of(container));
         Mockito.when(instance.id()).thenReturn("i-1");
-        return new DockerComputeBackend(client, listener, events, executor);
+        DockerComputeBackend backend = new DockerComputeBackend(client, listener, events, executor);
+        backend.initialize();
+        return backend;
     }
 
     private Event stoppedEvent() {

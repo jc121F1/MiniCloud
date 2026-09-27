@@ -48,6 +48,7 @@ public class DockerComputeBackend implements ComputeBackend {
     private final Executor computeExecutor;
     private final AtomicBoolean closed = new AtomicBoolean();
     private final Consumer<DockerContainerEvent> eventConsumer = this::handleDockerEvent;
+    private volatile boolean initialized;
 
     @Inject
     public DockerComputeBackend(
@@ -60,8 +61,31 @@ public class DockerComputeBackend implements ComputeBackend {
         this.eventListener = eventListener;
         this.eventBus = eventBus;
         this.computeExecutor = executor;
-        this.reconcileContainers().join();
-        this.eventBus.subscribe(DockerContainerEvent.class, eventConsumer);
+    }
+
+    @Override
+    public synchronized void initialize() {
+        if (closed.get()) {
+            throw new IllegalStateException("Docker backend is closed");
+        }
+        if (initialized) {
+            return;
+        }
+        try {
+            eventListener.initialize();
+            reconcileContainers().join();
+            eventBus.subscribe(DockerContainerEvent.class, eventConsumer);
+            initialized = true;
+        } catch (RuntimeException | Error failure) {
+            try {
+                close();
+            } catch (Exception cleanupFailure) {
+                if (cleanupFailure != failure) {
+                    failure.addSuppressed(cleanupFailure);
+                }
+            }
+            throw failure;
+        }
     }
 
     @Override
@@ -182,7 +206,7 @@ public class DockerComputeBackend implements ComputeBackend {
     }
 
     @Override
-    public void close() throws Exception {
+    public synchronized void close() throws Exception {
         if (!closed.compareAndSet(false, true)) {
             return;
         }
@@ -196,6 +220,9 @@ public class DockerComputeBackend implements ComputeBackend {
     private void requireOpen() {
         if (closed.get()) {
             throw new IllegalStateException("Docker backend is closed");
+        }
+        if (!initialized) {
+            throw new IllegalStateException("Docker backend is not initialized");
         }
     }
 

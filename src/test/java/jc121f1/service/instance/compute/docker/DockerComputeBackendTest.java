@@ -739,12 +739,14 @@ public class DockerComputeBackendTest {
     }
 
     private DockerComputeBackend newBackend() {
-        return new DockerComputeBackend(
+        DockerComputeBackend backend = new DockerComputeBackend(
                 dockerClient,
                 eventListener,
                 eventBus,
                 executor
         );
+        backend.initialize();
+        return backend;
     }
 
     @SuppressWarnings("unchecked")

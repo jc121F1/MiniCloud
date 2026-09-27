@@ -31,6 +31,7 @@ public class DockerEventListener implements AutoCloseable {
     private final AtomicReference<Throwable> terminalFailure = new AtomicReference<>();
     private final AtomicBoolean closed = new AtomicBoolean();
     private final Duration eventTimeout;
+    private volatile boolean initialized;
 
     @Inject
     public DockerEventListener(DockerClient dockerClient, EventBus eventBus) {
@@ -44,10 +45,15 @@ public class DockerEventListener implements AutoCloseable {
         this.dockerClient = dockerClient;
         this.eventBus = eventBus;
         this.eventTimeout = eventTimeout;
-        start();
     }
 
-    private void start() {
+    public synchronized void initialize() {
+        if (closed.get()) {
+            throw new IllegalStateException("Docker event listener is closed");
+        }
+        if (initialized) {
+            return;
+        }
         callback = new ResultCallback.Adapter<>() {
 
             @Override
@@ -91,8 +97,12 @@ public class DockerEventListener implements AutoCloseable {
 
         try {
             dockerClient.eventsCmd().exec(callback);
+            if (terminalFailure.get() != null) {
+                throw new IllegalStateException("Docker event stream failed during startup", terminalFailure.get());
+            }
+            initialized = true;
         } catch (RuntimeException | Error failure) {
-            // Construction has not returned, so no runtime owner can close this stream yet.
+            // A failed startup may already have opened a stream.
             try {
                 close();
             } catch (Exception cleanupFailure) {
@@ -106,6 +116,9 @@ public class DockerEventListener implements AutoCloseable {
             String containerId,
             EventAction action
     ) {
+        if (!initialized && !closed.get()) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Docker event listener is not initialized"));
+        }
         EventKey key = new EventKey(containerId, action);
 
         CompletableFuture<Event> future = new CompletableFuture<>();
@@ -142,7 +155,7 @@ public class DockerEventListener implements AutoCloseable {
     }
 
     @Override
-    public void close() throws IOException {
+    public synchronized void close() throws IOException {
         if (!closed.compareAndSet(false, true)) {
             return;
         }

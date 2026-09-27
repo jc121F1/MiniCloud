@@ -46,6 +46,7 @@ public class DockerEventListenerTest {
         Mockito.when(dockerClient.eventsCmd()).thenReturn(eventsCmd);
 
         eventListener = new DockerEventListener(dockerClient, eventBus);
+        eventListener.initialize();
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<ResultCallback.Adapter<Event>> captor =
@@ -313,7 +314,7 @@ public class DockerEventListenerTest {
             throw failure;
         }).when(eventsCmd).exec(Mockito.any());
 
-        Assertions.assertThatThrownBy(() -> new DockerEventListener(dockerClient, eventBus)).isSameAs(failure);
+        Assertions.assertThatThrownBy(() -> new DockerEventListener(dockerClient, eventBus).initialize()).isSameAs(failure);
         Mockito.verify(stream).close();
         Mockito.verify(dockerClient, Mockito.never()).close();
     }
@@ -330,7 +331,7 @@ public class DockerEventListenerTest {
             throw failure;
         }).when(eventsCmd).exec(Mockito.any());
 
-        Assertions.assertThatThrownBy(() -> new DockerEventListener(dockerClient, eventBus)).isSameAs(failure);
+        Assertions.assertThatThrownBy(() -> new DockerEventListener(dockerClient, eventBus).initialize()).isSameAs(failure);
         Assertions.assertThat(failure.getSuppressed()).containsExactly(cleanupFailure);
     }
 

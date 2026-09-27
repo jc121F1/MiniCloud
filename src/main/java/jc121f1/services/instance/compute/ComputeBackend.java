@@ -9,6 +9,9 @@ import java.util.concurrent.CompletableFuture;
 
 public interface ComputeBackend extends AutoCloseable {
 
+    /** Initializes runtime connections and discovers existing workloads before serving requests. */
+    void initialize();
+
     CompletableFuture<Void> create(Instance instance);
 
     CompletableFuture<Void> start(Instance instance);

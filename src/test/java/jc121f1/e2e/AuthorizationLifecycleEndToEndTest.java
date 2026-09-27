@@ -492,6 +492,10 @@ class AuthorizationLifecycleEndToEndTest {
         private final List<String> created = new CopyOnWriteArrayList<>();
 
         @Override
+        public void initialize() {
+        }
+
+        @Override
         public CompletableFuture<Void> create(Instance instance) {
             created.add(instance.id());
             return CompletableFuture.completedFuture(null);
