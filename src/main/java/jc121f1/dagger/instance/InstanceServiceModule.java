@@ -21,9 +21,11 @@ import jc121f1.services.instance.events.EventBus;
 import jc121f1.services.instance.store.InstanceStore;
 import jc121f1.services.instance.store.nosql.DynamoDbInstanceStore;
 import jc121f1.runtime.RuntimeResources;
+import jc121f1.services.authz.AuthorizationService;
 
 import javax.inject.Singleton;
 import java.time.Duration;
+import java.time.Clock;
 import java.time.temporal.ChronoUnit;
 
 @Module
@@ -31,6 +33,13 @@ public abstract class InstanceServiceModule {
     @Binds
     @Singleton
     public abstract InstanceService instanceService(InstanceServiceImpl instanceService);
+
+    @Provides @Singleton
+    public static InstanceServiceImpl managedInstanceService(Clock clock, ComputeBackend backend,
+            EventBus events, InstanceStore store, AuthorizationService authorization, RuntimeResources resources) {
+        return resources.own(new InstanceServiceImpl(clock, backend, events, store, authorization),
+                RuntimeResources.Phase.BACKEND);
+    }
 
     @Provides @Singleton
     public static ComputeBackend computeBackend(DockerComputeBackend backend, DockerClient client,

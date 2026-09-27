@@ -69,12 +69,19 @@ public class TestServiceModule {
 
     @Provides
     @Singleton
-    InstanceService instanceService(
+    InstanceServiceImpl managedInstanceService(
             Clock clock,
             ComputeBackend computeBackend,
+            EventBus events,
             InstanceStore instanceStore,
             AuthorizationService authorizationService) {
 
-        return new InstanceServiceImpl(clock, computeBackend, eventBus(), instanceStore, authorizationService);
+        return new InstanceServiceImpl(clock, computeBackend, events, instanceStore, authorizationService);
+    }
+
+    @Provides
+    @Singleton
+    InstanceService instanceService(InstanceServiceImpl service) {
+        return service;
     }
 }

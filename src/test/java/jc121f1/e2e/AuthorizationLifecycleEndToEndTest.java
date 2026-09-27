@@ -123,6 +123,7 @@ class AuthorizationLifecycleEndToEndTest {
                 users, credentialStore), audit);
         var instanceService = new InstanceServiceImpl(Clock.systemUTC(), backend,
                 new SimpleEventBus(Runnable::run), instances, authorization);
+        instanceService.initialize();
         authApp = new AuthWebService(authComponent(auth)).create().start(0);
         authzApp = new AuthzWebService(authzComponent(auth, policyService)).create().start(0);
         instanceApp = new InstanceWebService(instanceComponent(auth, instanceService)).create().start(0);

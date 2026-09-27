@@ -16,7 +16,6 @@ import jc121f1.model.instance.api.request.StartInstanceRequest;
 import jc121f1.model.instance.api.request.StopInstanceRequest;
 import jc121f1.model.instance.dao.Instance;
 import jc121f1.services.instance.compute.ComputeBackend;
-import jc121f1.services.instance.InstanceService;
 import jc121f1.services.instance.InstanceServiceImpl;
 import jc121f1.services.instance.compute.docker.EventAction;
 import jc121f1.services.instance.events.EventBus;
@@ -62,7 +61,7 @@ public class InstanceServiceTest {
     @Spy private EventBus eventBus = new SimpleEventBus(Executors.newVirtualThreadPerTaskExecutor());
 
     @Nested class Given_an_instance_service {
-        InstanceService instanceService;
+        InstanceServiceImpl instanceService;
         ConcurrentMap<String, Instance> instancesById;
         ConcurrentMap<String, String> idsByName;
 
@@ -128,6 +127,7 @@ public class InstanceServiceTest {
                         return CompletableFuture.completedFuture(null);
                     });
             instanceService = new InstanceServiceImpl(clock, computeBackend, eventBus, instanceStore, authorizationService);
+            instanceService.initialize();
         }
 
         @Nested class When_receiving_a_valid_create_request {
@@ -768,7 +768,7 @@ public class InstanceServiceTest {
                 Mockito.when(computeBackend.describeStatuses(List.of(instance)))
                         .thenReturn(statuses);
 
-                new InstanceServiceImpl(clock, computeBackend, eventBus, instanceStore, authorizationService);
+                new InstanceServiceImpl(clock, computeBackend, eventBus, instanceStore, authorizationService).initialize();
             }
         }
 

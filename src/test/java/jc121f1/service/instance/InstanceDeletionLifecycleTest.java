@@ -159,7 +159,7 @@ class InstanceDeletionLifecycleTest {
         Mockito.when(backend.describeStatuses(Mockito.any())).thenReturn(Map.of());
         Mockito.when(backend.delete(Mockito.any())).thenReturn(CompletableFuture.failedFuture(
                 new IllegalStateException("backend unavailable")));
-        newService();
+        Assertions.assertThatThrownBy(this::newService).hasMessage("backend unavailable");
         Assertions.assertThat(stored.get().state()).isEqualTo(InstanceState.DELETING);
         Mockito.verify(store, Mockito.never()).update(Mockito.any(), Mockito.any());
     }
@@ -188,14 +188,17 @@ class InstanceDeletionLifecycleTest {
         Mockito.when(backend.describeStatuses(Mockito.any())).thenReturn(Map.of("i-1", ComputeStatus.STOPPED));
         Mockito.doReturn(CompletableFuture.failedFuture(new ConflictException("delete won")))
                 .when(store).update(Mockito.any(), Mockito.any());
-        newService();
+        Assertions.assertThatThrownBy(this::newService).isInstanceOf(ConflictException.class);
         Mockito.verify(backend, Mockito.never()).create(Mockito.any());
         Mockito.verify(backend, Mockito.never()).start(Mockito.any());
         Mockito.verify(backend, Mockito.never()).stop(Mockito.any());
     }
 
     private InstanceServiceImpl newService() {
-        return new InstanceServiceImpl(Clock.systemUTC(), backend, events, store, Mockito.mock(AuthorizationService.class));
+        InstanceServiceImpl created = new InstanceServiceImpl(Clock.systemUTC(), backend, events, store,
+                Mockito.mock(AuthorizationService.class));
+        created.initialize();
+        return created;
     }
 
     private void publishHealthEvents() {

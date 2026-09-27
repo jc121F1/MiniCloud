@@ -8,6 +8,32 @@ import org.mockito.Mockito;
 
 class ApplicationRuntimeTest {
     @Test
+    void initializationFinishesBeforeOpeningHttp() {
+        ApplicationRuntime runtime = new ApplicationRuntime();
+        RuntimeResources resources = Mockito.mock(RuntimeResources.class);
+        Runnable initialize = Mockito.mock(Runnable.class);
+        WebService service = Mockito.mock(WebService.class);
+        runtime.startService(resources, initialize, () -> service);
+        InOrder order = Mockito.inOrder(initialize, service);
+        order.verify(initialize).run();
+        order.verify(service).start();
+        runtime.close();
+    }
+
+    @Test
+    void initializationFailureClosesResourcesWithoutCreatingHttpService() {
+        ApplicationRuntime runtime = new ApplicationRuntime();
+        RuntimeResources resources = Mockito.mock(RuntimeResources.class);
+        IllegalStateException failure = new IllegalStateException("reconciliation failed");
+        Assertions.assertThatThrownBy(() -> runtime.startService(resources, () -> {
+            throw failure;
+        }, () -> {
+            throw new AssertionError("HTTP service must not be created after initialization failed");
+        })).isSameAs(failure);
+        Mockito.verify(resources).close();
+    }
+
+    @Test
     void allHttpServicesStopBeforeAnyDependenciesEvenIfOneStopFails() {
         ApplicationRuntime runtime = new ApplicationRuntime();
         WebService first = Mockito.mock(WebService.class);

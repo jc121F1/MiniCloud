@@ -14,7 +14,8 @@ public class Main {
         Runtime.getRuntime().addShutdownHook(new Thread(runtime::close, "minicloud-shutdown"));
         try {
             var instance = DaggerInstanceWebServiceComponent.create();
-            runtime.startService(instance.runtimeResources(), () -> new InstanceWebService(instance));
+            runtime.startService(instance.runtimeResources(), () -> instance.managedInstanceService().initialize(),
+                    () -> new InstanceWebService(instance));
             var auth = DaggerAuthWebServiceComponent.create();
             runtime.startService(auth.runtimeResources(), () -> new AuthWebService(auth));
             var authz = DaggerAuthzWebServiceComponent.create();

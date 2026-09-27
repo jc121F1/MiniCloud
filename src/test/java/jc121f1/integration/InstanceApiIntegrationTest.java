@@ -88,6 +88,7 @@ class InstanceApiIntegrationTest {
 
         Mockito.when(computeBackend.describeStatuses(Mockito.any()))
                 .thenReturn(Map.of(instance.id(), ComputeStatus.RUNNING));
+        component.managedInstanceService().initialize();
         app = new InstanceWebService(component).create();
     }
 

@@ -111,6 +111,7 @@ class InstanceAuthzIntegrationTest {
         var audited = new AuditedAuthorizationService(evaluator,
                 new AuthorizationAudit(Clock.systemUTC(), auditEvents::add));
         service = new InstanceServiceImpl(Clock.systemUTC(), backend, Mockito.mock(EventBus.class), instances, audited);
+        service.initialize();
         Mockito.when(instances.list()).thenReturn(CompletableFuture.completedFuture(List.of(FIRST, SECOND, FOREIGN)));
 
         AuthService auth = Mockito.mock(AuthService.class);

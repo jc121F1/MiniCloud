@@ -8,6 +8,7 @@ import jc121f1.dagger.WebServiceComponent;
 import jc121f1.dagger.auth.AuthHandlers;
 import jc121f1.dagger.auth.AuthServiceModule;
 import jc121f1.services.instance.compute.ComputeBackend;
+import jc121f1.services.instance.InstanceServiceImpl;
 import jc121f1.services.instance.store.InstanceStore;
 
 import javax.inject.Singleton;
@@ -16,6 +17,8 @@ import javax.inject.Singleton;
 @Component(modules = {InstanceServiceModule.class, AuthServiceModule.class,
         ServiceModule.class, EnvironmentModule.class})
 public interface InstanceWebServiceComponent extends WebServiceComponent, InstanceWebServiceHandlers, AuthHandlers {
+    InstanceServiceImpl managedInstanceService();
+
     ComputeBackend computeBackend();
 
     DockerClient dockerClient();

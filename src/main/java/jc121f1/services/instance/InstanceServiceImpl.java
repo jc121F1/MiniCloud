@@ -25,7 +25,6 @@ import jc121f1.services.instance.exceptions.ValidationException;
 import jc121f1.services.instance.store.InstanceStore;
 import lombok.extern.slf4j.Slf4j;
 
-import javax.inject.Inject;
 import java.time.Clock;
 import java.util.List;
 import java.util.Map;
@@ -35,9 +34,10 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.function.Supplier;
+import java.util.function.Consumer;
 
 @Slf4j
-public class InstanceServiceImpl implements InstanceService {
+public class InstanceServiceImpl implements InstanceService, AutoCloseable {
     private final Clock clock;
 
 
@@ -47,12 +47,15 @@ public class InstanceServiceImpl implements InstanceService {
 
     private final InstanceStore instanceStore;
     private final AuthorizationService authorizationService;
+    private final Consumer<InstanceHealthEvent> healthConsumer = this::handleHealthEvent;
+    private boolean initialized;
+    private boolean subscribed;
+    private volatile boolean closed;
 
     @SuppressFBWarnings(
             value = "EI_EXPOSE_REP2",
             justification = "computeBackend is an injected service dependency and is intentionally shared."
     )
-    @Inject
     public InstanceServiceImpl(Clock clock, ComputeBackend computeBackend, EventBus eventBus,
                                InstanceStore instanceStore, AuthorizationService authorizationService) {
         this.clock = clock;
@@ -61,15 +64,44 @@ public class InstanceServiceImpl implements InstanceService {
         this.instanceStore = instanceStore;
         this.authorizationService = authorizationService;
 
-        this.registerHealthEvents();
-        reconcileExistingInstances().exceptionally(error -> {
-            log.warn("Unable to reconcile existing instances during startup", error);
-            return null;
-        });
     }
 
-    private void registerHealthEvents() {
-        eventBus.subscribe(InstanceHealthEvent.class, this::handleHealthEvent);
+    /** Called by the runtime before opening the instance HTTP listener. */
+    public synchronized void initialize() {
+        if (closed) {
+            throw new IllegalStateException("Instance service is closed");
+        }
+        if (initialized) {
+            return;
+        }
+        try {
+            subscribed = true;
+            eventBus.subscribe(InstanceHealthEvent.class, healthConsumer);
+            reconcileExistingInstances().join();
+            initialized = true;
+        } catch (RuntimeException | Error failure) {
+            try {
+                close();
+            } catch (RuntimeException cleanupFailure) {
+                if (cleanupFailure != failure) {
+                    failure.addSuppressed(cleanupFailure);
+                }
+            }
+            if (failure instanceof Error error) {
+                throw error;
+            }
+            throw operationFailure(failure);
+        }
+    }
+
+    @Override
+    public synchronized void close() {
+        if (!closed) {
+            closed = true;
+            if (subscribed) {
+                eventBus.unsubscribe(InstanceHealthEvent.class, healthConsumer);
+            }
+        }
     }
 
     @Override
@@ -301,6 +333,9 @@ public class InstanceServiceImpl implements InstanceService {
     }
 
     private void handleHealthEvent(InstanceHealthEvent event) {
+        if (closed) {
+            return;
+        }
         switch (event.action()) {
             case UNHEALTHY:
                 instanceStore.get(event.instanceId())

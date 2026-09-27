@@ -37,6 +37,7 @@ class InstanceLifecycleFailureTest {
         Mockito.when(store.get("i-1")).thenReturn(CompletableFuture.completedFuture(Optional.of(stopped)));
         service = new InstanceServiceImpl(Clock.systemUTC(), backend, Mockito.mock(EventBus.class), store,
                 Mockito.mock(AuthorizationService.class));
+        service.initialize();
     }
 
     @Test

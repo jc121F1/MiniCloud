@@ -15,12 +15,17 @@ public final class ApplicationRuntime implements AutoCloseable {
     private boolean closed;
 
     public synchronized void startService(RuntimeResources owned, Supplier<WebService> factory) {
+        startService(owned, () -> { }, factory);
+    }
+
+    public synchronized void startService(RuntimeResources owned, Runnable initialize, Supplier<WebService> factory) {
         if (closed) {
             owned.close();
             throw new IllegalStateException("Application runtime is closed");
         }
         resources.add(owned);
         try {
+            initialize.run();
             WebService service = factory.get();
             services.add(service);
             service.start();

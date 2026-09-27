@@ -53,6 +53,7 @@ class InstanceAuthorizationTest {
     void setup() {
         Mockito.when(store.list()).thenReturn(CompletableFuture.completedFuture(List.of()));
         service = new InstanceServiceImpl(Clock.systemUTC(), backend, events, store, authorization);
+        service.initialize();
         Mockito.clearInvocations(store, backend, authorization);
     }
 
