@@ -110,8 +110,13 @@ class AuthorizationLifecycleEndToEndTest {
         credentialStore = new DynamoDbCredentialStore(dynamo, credentialTable);
         var sessions = new DynamoDbSessionStore(dynamo, sessionTable);
         var policies = new DynamoDbPolicyStore(dynamo, policyTable);
+        users.initialize().join();
+        accounts.initialize().join();
+        credentialStore.initialize().join();
+        sessions.initialize().join();
         policies.initialize().join();
         var instances = new DynamoDbInstanceStore(dynamo, instanceTable);
+        instances.initialize().join();
         var registry = AuthorizationCatalogModule.actionRegistry();
         var validator = new PolicyValidator(registry);
         var audit = new AuthorizationAudit(Clock.systemUTC(), events::add);

@@ -22,16 +22,16 @@ public abstract class AuthServiceModule {
     @Binds @Singleton
     public abstract AuthService authService(AuthServiceImpl authService);
 
-    @Binds @Singleton
+    @Binds
     public abstract AccountStore accountStore(DynamoDbAccountStore accountStore);
 
-    @Binds @Singleton
+    @Binds
     public abstract UserStore userStore(DynamoDbUserStore userStore);
 
-    @Binds @Singleton
+    @Binds
     public abstract SessionStore sessionStore(DynamoDbSessionStore sessionStore);
 
-    @Binds @Singleton
+    @Binds
     public abstract CredentialStore credentialStore(DynamoDbCredentialStore credentialStore);
 
     @Provides @Singleton

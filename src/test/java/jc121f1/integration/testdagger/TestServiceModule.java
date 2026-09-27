@@ -10,6 +10,8 @@ import jc121f1.services.instance.InstanceServiceImpl;
 import jc121f1.services.instance.compute.ComputeBackend;
 import jc121f1.services.instance.events.EventBus;
 import jc121f1.services.instance.store.InstanceStore;
+import jc121f1.services.instance.store.nosql.DynamoDbInstanceStore;
+import jc121f1.runtime.StoreInitializer;
 import org.assertj.core.util.VisibleForTesting;
 import org.mockito.Mockito;
 
@@ -21,6 +23,16 @@ import java.time.ZoneOffset;
 @Module
 @VisibleForTesting
 public class TestServiceModule {
+
+    @Provides @Singleton
+    StoreInitializer storeInitializer() {
+        return Mockito.mock(StoreInitializer.class);
+    }
+
+    @Provides @Singleton
+    DynamoDbInstanceStore initializableInstanceStore() {
+        return Mockito.mock(DynamoDbInstanceStore.class);
+    }
 
     @Provides
     @Singleton

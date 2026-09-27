@@ -47,7 +47,7 @@ public abstract class InstanceServiceModule {
         return resources.ownComposite(backend, client, listener);
     }
 
-    @Binds @Singleton
+    @Binds
     public abstract InstanceStore instanceStore(DynamoDbInstanceStore instanceStore);
 
     @Provides

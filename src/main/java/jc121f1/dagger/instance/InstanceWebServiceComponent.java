@@ -10,6 +10,7 @@ import jc121f1.dagger.auth.AuthServiceModule;
 import jc121f1.services.instance.compute.ComputeBackend;
 import jc121f1.services.instance.InstanceServiceImpl;
 import jc121f1.services.instance.store.InstanceStore;
+import jc121f1.services.instance.store.nosql.DynamoDbInstanceStore;
 
 import javax.inject.Singleton;
 
@@ -24,4 +25,6 @@ public interface InstanceWebServiceComponent extends WebServiceComponent, Instan
     DockerClient dockerClient();
 
     InstanceStore instanceStore();
+
+    DynamoDbInstanceStore initializableInstanceStore();
 }

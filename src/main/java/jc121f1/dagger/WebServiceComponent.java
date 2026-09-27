@@ -6,10 +6,13 @@ import jc121f1.dagger.qualifiers.ExposeShutdownEndpoint;
 import jc121f1.wbs.JmDNSManager;
 import jc121f1.wbs.exceptions.MiniCloudExceptionMapper;
 import jc121f1.runtime.RuntimeResources;
+import jc121f1.runtime.StoreInitializer;
 
 
 public interface WebServiceComponent {
     RuntimeResources runtimeResources();
+
+    StoreInitializer storeInitializer();
 
     @ExposeShutdownEndpoint
     Boolean shutdownEndpoint();

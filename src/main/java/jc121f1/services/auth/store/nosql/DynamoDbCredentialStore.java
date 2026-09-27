@@ -13,6 +13,7 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 import javax.inject.Inject;
+import javax.inject.Singleton;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -21,6 +22,7 @@ import java.util.HashMap;
 import java.util.concurrent.CompletableFuture;
 
 @Slf4j
+@Singleton
 public final class DynamoDbCredentialStore extends DynamoDbStore<Credential> implements CredentialStore {
 
     private static final String TABLE_NAME = "MiniCloudCredentialStore";
@@ -28,13 +30,11 @@ public final class DynamoDbCredentialStore extends DynamoDbStore<Credential> imp
     @Inject
     public DynamoDbCredentialStore(final DynamoDbAsyncClient dynamoDbClient) {
         super(dynamoDbClient, createDefinition(TABLE_NAME));
-        initialize().join();
     }
 
     @VisibleForTesting
     public DynamoDbCredentialStore(final DynamoDbAsyncClient dynamoDbClient, String tableName) {
         super(dynamoDbClient, createDefinition(tableName));
-        initialize().join();
     }
 
     @VisibleForTesting

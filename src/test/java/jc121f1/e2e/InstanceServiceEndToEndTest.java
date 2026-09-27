@@ -66,6 +66,8 @@ class InstanceServiceEndToEndTest {
         dockerClient = component.dockerClient();
 
         String bearerToken = setupAuth();
+        component.storeInitializer().initialize();
+        component.initializableInstanceStore().initialize().join();
         component.computeBackend().initialize();
         component.managedInstanceService().initialize();
         webService = new InstanceWebService(component).create();

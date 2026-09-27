@@ -17,12 +17,14 @@ import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.ProjectionType;
 
 import javax.inject.Inject;
+import javax.inject.Singleton;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 @Slf4j
+@Singleton
 public final class DynamoDbUserStore extends DynamoDbStore<User> implements UserStore {
 
     private static final String TABLE_NAME = "MiniCloudUserStore";
@@ -31,13 +33,11 @@ public final class DynamoDbUserStore extends DynamoDbStore<User> implements User
     @Inject
     public DynamoDbUserStore(final DynamoDbAsyncClient dynamoDbClient) {
         super(dynamoDbClient, createDefinition(TABLE_NAME));
-        initialize().join();
     }
 
     @VisibleForTesting
     public DynamoDbUserStore(final DynamoDbAsyncClient dynamoDbClient, String tableName) {
         super(dynamoDbClient, createDefinition(tableName));
-        initialize().join();
     }
 
     @VisibleForTesting

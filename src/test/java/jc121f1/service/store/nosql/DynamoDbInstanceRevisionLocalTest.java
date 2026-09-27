@@ -34,6 +34,7 @@ class DynamoDbInstanceRevisionLocalTest {
                 .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create("dummy", "dummy")))
                 .build();
         store = new DynamoDbInstanceStore(client, tableName);
+        store.initialize().join();
     }
 
     @AfterAll

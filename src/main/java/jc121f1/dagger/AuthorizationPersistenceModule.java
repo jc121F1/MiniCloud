@@ -10,6 +10,5 @@ import javax.inject.Singleton;
 @Module
 public abstract class AuthorizationPersistenceModule {
     @Binds
-    @Singleton
     public abstract PolicyStore policyStore(DynamoDbPolicyStore store);
 }

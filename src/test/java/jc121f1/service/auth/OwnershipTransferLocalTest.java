@@ -38,6 +38,8 @@ class OwnershipTransferLocalTest {
                 .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create("dummy", "dummy"))).build();
         users = new DynamoDbUserStore(client, userTable);
         accounts = new DynamoDbAccountStore(client, users, accountTable);
+        users.initialize().join();
+        accounts.initialize().join();
     }
 
     @AfterAll

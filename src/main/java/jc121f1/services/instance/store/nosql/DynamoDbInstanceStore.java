@@ -18,6 +18,7 @@ import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.TransactionCanceledException;
 
 import javax.inject.Inject;
+import javax.inject.Singleton;
 import java.util.List;
 import java.util.Optional;
 import java.util.Map;
@@ -26,6 +27,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 
 @Slf4j
+@Singleton
 public final class DynamoDbInstanceStore extends DynamoDbStore<Instance> implements InstanceStore {
 
     public static final String INSTANCE_GSI = "InstanceNameIndex";
@@ -34,13 +36,11 @@ public final class DynamoDbInstanceStore extends DynamoDbStore<Instance> impleme
     @Inject
     public DynamoDbInstanceStore(final DynamoDbAsyncClient dynamoDbClient) {
         super(dynamoDbClient, createDefinition(TABLE_NAME));
-        initialize().join();
     }
 
     @VisibleForTesting
     public DynamoDbInstanceStore(final DynamoDbAsyncClient dynamoDbClient, String tableName) {
         super(dynamoDbClient, createDefinition(tableName));
-        initialize().join();
     }
 
     @VisibleForTesting

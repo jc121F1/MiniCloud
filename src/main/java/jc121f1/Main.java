@@ -15,13 +15,17 @@ public class Main {
         try {
             var instance = DaggerInstanceWebServiceComponent.create();
             runtime.startService(instance.runtimeResources(), () -> {
+                instance.storeInitializer().initialize();
+                instance.initializableInstanceStore().initialize().join();
                 instance.computeBackend().initialize();
                 instance.managedInstanceService().initialize();
             }, () -> new InstanceWebService(instance));
             var auth = DaggerAuthWebServiceComponent.create();
-            runtime.startService(auth.runtimeResources(), () -> new AuthWebService(auth));
+            runtime.startService(auth.runtimeResources(), () -> auth.storeInitializer().initialize(),
+                    () -> new AuthWebService(auth));
             var authz = DaggerAuthzWebServiceComponent.create();
-            runtime.startService(authz.runtimeResources(), () -> new AuthzWebService(authz));
+            runtime.startService(authz.runtimeResources(), () -> authz.storeInitializer().initialize(),
+                    () -> new AuthzWebService(authz));
         } catch (RuntimeException | Error failure) {
             runtime.close();
             throw failure;

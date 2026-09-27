@@ -20,6 +20,7 @@ import software.amazon.awssdk.services.dynamodb.model.TransactWriteItem;
 import software.amazon.awssdk.services.dynamodb.model.TransactionCanceledException;
 
 import javax.inject.Inject;
+import javax.inject.Singleton;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,6 +30,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 
 @Slf4j
+@Singleton
 public final class DynamoDbAccountStore extends DynamoDbStore<Account> implements AccountStore {
 
     private static final String TABLE_NAME = "MiniCloudIdentityStore";
@@ -42,7 +44,6 @@ public final class DynamoDbAccountStore extends DynamoDbStore<Account> implement
     public DynamoDbAccountStore(final DynamoDbAsyncClient dynamoDbClient, DynamoDbUserStore users) {
         super(dynamoDbClient, createDefinition(TABLE_NAME));
         this.users = users;
-        initialize().join();
     }
 
     @VisibleForTesting
@@ -53,7 +54,6 @@ public final class DynamoDbAccountStore extends DynamoDbStore<Account> implement
     public DynamoDbAccountStore(final DynamoDbAsyncClient dynamoDbClient, DynamoDbUserStore users, String tableName) {
         super(dynamoDbClient, createDefinition(tableName));
         this.users = users;
-        initialize().join();
     }
 
     @VisibleForTesting

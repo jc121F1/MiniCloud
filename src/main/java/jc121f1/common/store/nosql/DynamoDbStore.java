@@ -644,7 +644,7 @@ public abstract class DynamoDbStore<T> implements GenericStore<T> {
                 .build();
     }
 
-    protected CompletableFuture<Void> initialize() {
+    public CompletableFuture<Void> initialize() {
         return dynamoDbAsyncClient
                 .describeTable(request ->
                         request.tableName(
