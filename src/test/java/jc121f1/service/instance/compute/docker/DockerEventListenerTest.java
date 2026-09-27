@@ -210,7 +210,7 @@ public class DockerEventListenerTest {
         @Test
         void It_should_reconnect_and_ignore_events_from_the_failed_generation() throws IOException {
             List<ResultCallback.Adapter<Event>> callbacks = new CopyOnWriteArrayList<>();
-            Mockito.doAnswer(call -> {
+            Mockito.lenient().doAnswer(call -> {
                 @SuppressWarnings("unchecked")
                 ResultCallback.Adapter<Event> next = call.getArgument(0);
                 callbacks.add(next);
