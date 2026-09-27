@@ -218,7 +218,7 @@ public class DockerEventListenerTest {
             Mockito.verify(eventsCmd, Mockito.times(2)).exec(captor.capture());
 
             CompletableFuture<Event> afterReconnect = eventListener.waitFor(CONTAINER_ID, EventAction.START);
-            captor.getAllValues().get(0).onNext(event(CONTAINER_ID, "start"));
+            captor.getAllValues().get(0).onNext(Mockito.mock(Event.class));
             Assertions.assertThat(afterReconnect).isNotDone();
             Event recoveredEvent = event(CONTAINER_ID, "start");
             captor.getAllValues().get(1).onNext(recoveredEvent);
