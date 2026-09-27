@@ -107,6 +107,7 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
     @Override
     public Instance get(AuthenticatedSession caller, GetInstanceRequest request) {
         Objects.requireNonNull(caller, "caller");
+        requireOpen();
 
         if (!request.hasIdentifier()) {
             throw new ValidationException(
@@ -140,6 +141,7 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
     @Override
     public Instance create(AuthenticatedSession caller, CreateInstanceRequest request) {
         Objects.requireNonNull(caller, "caller");
+        requireOpen();
         authorizationService.authorize(caller, InstanceAction.CREATE, accountResource(caller.accountId()));
         String instanceId;
         Instance createdInstance;
@@ -167,6 +169,7 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
     @Override
     public List<Instance> list(AuthenticatedSession caller, ListInstanceRequest request) {
         Objects.requireNonNull(caller, "caller");
+        requireOpen();
         authorizationService.authorize(caller, InstanceAction.LIST, accountResource(caller.accountId()));
         return instanceStore.list().join().stream()
                 .filter(instance -> caller.accountId().equals(instance.accountId()))
@@ -182,6 +185,7 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
     @Override
     public Instance delete(AuthenticatedSession caller, DeleteInstanceRequest request) {
         Objects.requireNonNull(caller, "caller");
+        requireOpen();
         Instance remove;
         String identifier;
 
@@ -221,6 +225,7 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
     @Override
     public Instance stop(AuthenticatedSession caller, StopInstanceRequest request) {
         Objects.requireNonNull(caller, "caller");
+        requireOpen();
         Instance stop;
         String identifier;
 
@@ -250,6 +255,7 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
     @Override
     public Instance start(AuthenticatedSession caller, StartInstanceRequest request) {
         Objects.requireNonNull(caller, "caller");
+        requireOpen();
         Instance start;
         String identifier;
 
@@ -311,6 +317,11 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
     private CompletableFuture<Void> observeOperation(
             Instance instance, CompletableFuture<Void> operation, InstanceState success) {
         return operation.handle((ignored, error) -> {
+            if (closed) {
+                // Shutdown may cancel a Docker wait while its command is still in flight.
+                // Leave the reservation for startup reconciliation instead of guessing its outcome.
+                return null;
+            }
             if (error != null) {
                 log.warn("Backend operation failed for instance {}", instance.id(), error);
             }
@@ -322,6 +333,12 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
             }
             return null;
         });
+    }
+
+    private void requireOpen() {
+        if (closed) {
+            throw new IllegalStateException("Instance service is closed");
+        }
     }
 
     private RuntimeException operationFailure(Throwable error) {
@@ -340,7 +357,7 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
             case UNHEALTHY:
                 instanceStore.get(event.instanceId())
                         .thenAccept(optional -> optional.ifPresent(instance -> {
-                            if (instance.state() == InstanceState.RUNNING) {
+                            if (!closed && instance.state() == InstanceState.RUNNING) {
                                 setInstanceState(instance, InstanceState.MISSING);
                             }
                         })).exceptionally(error -> {
@@ -351,7 +368,7 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
             case HEALTHY:
                 instanceStore.get(event.instanceId())
                         .thenAccept(optional -> optional.ifPresent(instance -> {
-                            if (instance.state() == InstanceState.MISSING) {
+                            if (!closed && instance.state() == InstanceState.MISSING) {
                                 setInstanceState(instance, InstanceState.RUNNING);
                             }
                         })).exceptionally(error -> {
