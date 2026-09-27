@@ -23,8 +23,6 @@ import org.mockito.Mockito;
 import java.io.IOException;
 import java.io.Closeable;
 import java.time.Duration;
-import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CompletableFuture;
 
 @MiniCloudTest
@@ -209,30 +207,21 @@ public class DockerEventListenerTest {
 
         @Test
         void It_should_reconnect_and_ignore_events_from_the_failed_generation() throws IOException {
-            List<ResultCallback.Adapter<Event>> callbacks = new CopyOnWriteArrayList<>();
-            Mockito.lenient().doAnswer(call -> {
-                @SuppressWarnings("unchecked")
-                ResultCallback.Adapter<Event> next = call.getArgument(0);
-                callbacks.add(next);
-                return null;
-            }).when(eventsCmd).exec(Mockito.any());
-
-            eventListener.close();
-            eventListener = new DockerEventListener(dockerClient, eventBus);
-            eventListener.initialize();
-            Assertions.assertThat(callbacks).hasSize(1);
             CompletableFuture<Event> pending = eventListener.waitFor(CONTAINER_ID, EventAction.START);
 
-            callbacks.get(0).onError(new IOException("stream reset"));
+            callback.onError(new IOException("stream reset"));
             Assertions.assertThat(pending).isCompletedExceptionally();
             Awaitility.await().atMost(Duration.ofSeconds(3)).untilAsserted(() ->
-                    Assertions.assertThat(callbacks).hasSize(2));
+                    Mockito.verify(eventsCmd, Mockito.times(2)).exec(Mockito.any()));
+            ArgumentCaptor<ResultCallback.Adapter<Event>> captor =
+                    ArgumentCaptor.forClass(ResultCallback.Adapter.class);
+            Mockito.verify(eventsCmd, Mockito.times(2)).exec(captor.capture());
 
             CompletableFuture<Event> afterReconnect = eventListener.waitFor(CONTAINER_ID, EventAction.START);
-            callbacks.get(0).onNext(event(CONTAINER_ID, "start"));
+            captor.getAllValues().get(0).onNext(event(CONTAINER_ID, "start"));
             Assertions.assertThat(afterReconnect).isNotDone();
             Event recoveredEvent = event(CONTAINER_ID, "start");
-            callbacks.get(1).onNext(recoveredEvent);
+            captor.getAllValues().get(1).onNext(recoveredEvent);
             Assertions.assertThat(afterReconnect).isCompletedWithValue(recoveredEvent);
         }
 
