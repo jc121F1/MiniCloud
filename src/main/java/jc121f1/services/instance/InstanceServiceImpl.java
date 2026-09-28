@@ -32,10 +32,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
@@ -44,8 +47,10 @@ import java.util.function.Consumer;
 @Slf4j
 public class InstanceServiceImpl implements InstanceService, AutoCloseable {
     public static final Duration DEFAULT_STARTUP_DEADLINE = Duration.ofSeconds(120);
+    public static final Duration DEFAULT_SHUTDOWN_DRAIN_DEADLINE = Duration.ofSeconds(5);
     private final Clock clock;
     private final Duration startupDeadline;
+    private final Duration shutdownDrainDeadline;
 
     private final ComputeBackend computeBackend;
 
@@ -54,14 +59,24 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
     private final InstanceStore instanceStore;
     private final AuthorizationService authorizationService;
     private final Consumer<InstanceHealthEvent> healthConsumer = this::handleHealthEvent;
+    private CompletableFuture<Void> initialization;
     private boolean initialized;
     private boolean subscribed;
     private volatile boolean closed;
     private volatile long startupDeadlineNanos;
+    private final Set<CompletableFuture<Void>> inFlightOperations = ConcurrentHashMap.newKeySet();
 
     public InstanceServiceImpl(Clock clock, ComputeBackend computeBackend, EventBus eventBus,
                                InstanceStore instanceStore, AuthorizationService authorizationService) {
-        this(clock, computeBackend, eventBus, instanceStore, authorizationService, DEFAULT_STARTUP_DEADLINE);
+        this(clock, computeBackend, eventBus, instanceStore, authorizationService,
+                DEFAULT_STARTUP_DEADLINE, DEFAULT_SHUTDOWN_DRAIN_DEADLINE);
+    }
+
+    public InstanceServiceImpl(Clock clock, ComputeBackend computeBackend, EventBus eventBus,
+                               InstanceStore instanceStore, AuthorizationService authorizationService,
+                               Duration startupDeadline) {
+        this(clock, computeBackend, eventBus, instanceStore, authorizationService,
+                startupDeadline, DEFAULT_SHUTDOWN_DRAIN_DEADLINE);
     }
 
     @SuppressFBWarnings(
@@ -70,10 +85,13 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
     )
     public InstanceServiceImpl(Clock clock, ComputeBackend computeBackend, EventBus eventBus,
                                InstanceStore instanceStore, AuthorizationService authorizationService,
-                               Duration startupDeadline) {
+                               Duration startupDeadline, Duration shutdownDrainDeadline) {
         if (Objects.requireNonNull(startupDeadline, "startupDeadline").isZero()
                 || startupDeadline.isNegative()) {
             throw new IllegalArgumentException("Startup deadline must be positive");
+        }
+        if (Objects.requireNonNull(shutdownDrainDeadline, "shutdownDrainDeadline").isNegative()) {
+            throw new IllegalArgumentException("Shutdown drain deadline cannot be negative");
         }
         this.clock = clock;
         this.computeBackend = computeBackend;
@@ -81,25 +99,49 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
         this.instanceStore = instanceStore;
         this.authorizationService = authorizationService;
         this.startupDeadline = startupDeadline;
-
+        this.shutdownDrainDeadline = shutdownDrainDeadline;
     }
 
     /** Called by the runtime before opening the instance HTTP listener. */
-    public synchronized void initialize() {
-        if (closed) {
-            throw new IllegalStateException("Instance service is closed");
+    public void initialize() {
+        CompletableFuture<Void> initializationAttempt;
+        boolean initializeHere = false;
+        synchronized (this) {
+            if (closed) {
+                throw new IllegalStateException("Instance service is closed");
+            }
+            if (initialized) {
+                return;
+            }
+            if (initialization == null) {
+                initialization = new CompletableFuture<>();
+                initializeHere = true;
+            }
+            initializationAttempt = initialization;
         }
-        if (initialized) {
+        if (!initializeHere) {
+            initializationAttempt.join();
             return;
         }
         try {
-            subscribed = true;
-            eventBus.subscribe(InstanceHealthEvent.class, healthConsumer);
+            synchronized (this) {
+                if (closed) {
+                    throw new IllegalStateException("Instance service is closed");
+                }
+                subscribed = true;
+                eventBus.subscribe(InstanceHealthEvent.class, healthConsumer);
+            }
             startupDeadlineNanos = System.nanoTime() + startupDeadline.toNanos();
             reconcileExistingInstances(startupDeadlineNanos)
                     .orTimeout(startupDeadline.toNanos(), TimeUnit.NANOSECONDS)
                     .join();
-            initialized = true;
+            synchronized (this) {
+                if (closed) {
+                    throw new IllegalStateException("Instance service is closed");
+                }
+                initialized = true;
+            }
+            initializationAttempt.complete(null);
         } catch (RuntimeException | Error failure) {
             try {
                 close();
@@ -109,19 +151,47 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
                 }
             }
             if (failure instanceof Error error) {
+                initializationAttempt.completeExceptionally(failure);
                 throw error;
             }
+            initializationAttempt.completeExceptionally(failure);
             throw operationFailure(failure);
         }
     }
 
     @Override
-    public synchronized void close() {
-        if (!closed) {
+    public void close() {
+        boolean unsubscribe;
+        synchronized (this) {
+            if (closed) {
+                return;
+            }
             closed = true;
-            if (subscribed) {
+            unsubscribe = subscribed;
+            subscribed = false;
+        }
+        try {
+            if (unsubscribe) {
                 eventBus.unsubscribe(InstanceHealthEvent.class, healthConsumer);
             }
+        } finally {
+            drainOperations();
+        }
+    }
+
+    private void drainOperations() {
+        CompletableFuture<?>[] pending = inFlightOperations.toArray(CompletableFuture[]::new);
+        if (pending.length == 0 || shutdownDrainDeadline.isZero()) {
+            return;
+        }
+        try {
+            CompletableFuture.allOf(pending).get(shutdownDrainDeadline.toNanos(), TimeUnit.NANOSECONDS);
+        } catch (TimeoutException timeout) {
+            log.warn("Shutdown drain deadline expired with {} instance operations still in flight", pending.length);
+        } catch (ExecutionException ignored) {
+            // Operation observers consume backend failures and should not block resource cleanup.
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -342,7 +412,16 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
 
     private CompletableFuture<Void> observeOperation(
             Instance instance, CompletableFuture<Void> operation, InstanceState success, boolean startupRecovery) {
-        return operation.handle((ignored, error) -> {
+        CompletableFuture<Void> drainMarker = null;
+        if (!startupRecovery) {
+            synchronized (this) {
+                if (!closed) {
+                    drainMarker = new CompletableFuture<>();
+                    inFlightOperations.add(drainMarker);
+                }
+            }
+        }
+        CompletableFuture<Void> observed = operation.handle((ignored, error) -> {
             if (closed || (startupRecovery && System.nanoTime() - startupDeadlineNanos >= 0)) {
                 // Shutdown or the startup deadline may end coordination while Docker work is still in flight.
                 // Leave the reservation for startup reconciliation instead of guessing its outcome.
@@ -378,6 +457,14 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
             }
             return null;
         });
+        if (drainMarker != null) {
+            CompletableFuture<Void> marker = drainMarker;
+            observed.whenComplete((ignored, error) -> {
+                marker.complete(null);
+                inFlightOperations.remove(marker);
+            });
+        }
+        return observed;
     }
 
     private void requireOpen() {

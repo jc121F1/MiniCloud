@@ -18,8 +18,10 @@ import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.awaitility.Awaitility;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CancellationException;
@@ -32,7 +34,7 @@ class InstanceShutdownTest {
     private final ComputeBackend backend = Mockito.mock(ComputeBackend.class);
     private final SimpleEventBus events = new SimpleEventBus(Runnable::run);
     private final InstanceServiceImpl service = new InstanceServiceImpl(Clock.systemUTC(), backend, events, store,
-            Mockito.mock(AuthorizationService.class));
+            Mockito.mock(AuthorizationService.class), Duration.ofSeconds(1), Duration.ofMillis(250));
 
     @BeforeEach
     void initialize() {
@@ -57,6 +59,29 @@ class InstanceShutdownTest {
         Assertions.assertThatThrownBy(() -> service.start(CALLER,
                 StartInstanceRequest.builder().instanceId("i-1").build()))
                 .hasMessage("Instance service is closed");
+    }
+
+    @Test
+    void closeWaitsForInFlightWorkUntilItCompletesWithoutWritingAfterClose() throws Exception {
+        Instance stopped = instance(InstanceState.STOPPED);
+        Instance starting = stopped.toBuilder().state(InstanceState.STARTING).revision(2L).build();
+        Mockito.when(store.get("i-1")).thenReturn(CompletableFuture.completedFuture(Optional.of(stopped)));
+        Mockito.when(store.update(Mockito.any(), Mockito.any())).thenReturn(CompletableFuture.completedFuture(starting));
+        CompletableFuture<Void> operation = new CompletableFuture<>();
+        Mockito.when(backend.start(starting)).thenReturn(operation);
+        service.start(CALLER, StartInstanceRequest.builder().instanceId("i-1").build());
+        Mockito.clearInvocations(store);
+
+        CompletableFuture<Void> closing = CompletableFuture.runAsync(service::close);
+        Awaitility.await().pollInterval(Duration.ofMillis(5)).untilAsserted(() -> Assertions.assertThatThrownBy(() -> service.start(CALLER,
+                StartInstanceRequest.builder().instanceId("i-1").build()))
+                .hasMessage("Instance service is closed"));
+        Mockito.clearInvocations(store);
+        Assertions.assertThat(closing).isNotDone();
+        operation.complete(null);
+        closing.get();
+
+        Mockito.verify(store, Mockito.never()).update(Mockito.any(), Mockito.any());
     }
 
     @Test
