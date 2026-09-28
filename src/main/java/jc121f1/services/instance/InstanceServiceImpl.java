@@ -59,15 +59,15 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
     private volatile boolean closed;
     private volatile long startupDeadlineNanos;
 
-    @SuppressFBWarnings(
-            value = "EI_EXPOSE_REP2",
-            justification = "computeBackend is an injected service dependency and is intentionally shared."
-    )
     public InstanceServiceImpl(Clock clock, ComputeBackend computeBackend, EventBus eventBus,
                                InstanceStore instanceStore, AuthorizationService authorizationService) {
         this(clock, computeBackend, eventBus, instanceStore, authorizationService, DEFAULT_STARTUP_DEADLINE);
     }
 
+    @SuppressFBWarnings(
+            value = "EI_EXPOSE_REP2",
+            justification = "Injected service dependencies are intentionally shared."
+    )
     public InstanceServiceImpl(Clock clock, ComputeBackend computeBackend, EventBus eventBus,
                                InstanceStore instanceStore, AuthorizationService authorizationService,
                                Duration startupDeadline) {
