@@ -27,20 +27,25 @@ import jc121f1.services.instance.store.InstanceStore;
 import lombok.extern.slf4j.Slf4j;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 import java.util.function.Consumer;
 
 @Slf4j
 public class InstanceServiceImpl implements InstanceService, AutoCloseable {
+    public static final Duration DEFAULT_STARTUP_DEADLINE = Duration.ofSeconds(120);
     private final Clock clock;
-
+    private final Duration startupDeadline;
 
     private final ComputeBackend computeBackend;
 
@@ -52,6 +57,7 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
     private boolean initialized;
     private boolean subscribed;
     private volatile boolean closed;
+    private volatile long startupDeadlineNanos;
 
     @SuppressFBWarnings(
             value = "EI_EXPOSE_REP2",
@@ -59,11 +65,22 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
     )
     public InstanceServiceImpl(Clock clock, ComputeBackend computeBackend, EventBus eventBus,
                                InstanceStore instanceStore, AuthorizationService authorizationService) {
+        this(clock, computeBackend, eventBus, instanceStore, authorizationService, DEFAULT_STARTUP_DEADLINE);
+    }
+
+    public InstanceServiceImpl(Clock clock, ComputeBackend computeBackend, EventBus eventBus,
+                               InstanceStore instanceStore, AuthorizationService authorizationService,
+                               Duration startupDeadline) {
+        if (Objects.requireNonNull(startupDeadline, "startupDeadline").isZero()
+                || startupDeadline.isNegative()) {
+            throw new IllegalArgumentException("Startup deadline must be positive");
+        }
         this.clock = clock;
         this.computeBackend = computeBackend;
         this.eventBus = eventBus;
         this.instanceStore = instanceStore;
         this.authorizationService = authorizationService;
+        this.startupDeadline = startupDeadline;
 
     }
 
@@ -78,7 +95,10 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
         try {
             subscribed = true;
             eventBus.subscribe(InstanceHealthEvent.class, healthConsumer);
-            reconcileExistingInstances().join();
+            startupDeadlineNanos = System.nanoTime() + startupDeadline.toNanos();
+            reconcileExistingInstances(startupDeadlineNanos)
+                    .orTimeout(startupDeadline.toNanos(), TimeUnit.NANOSECONDS)
+                    .join();
             initialized = true;
         } catch (RuntimeException | Error failure) {
             try {
@@ -317,9 +337,14 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
 
     private CompletableFuture<Void> observeOperation(
             Instance instance, CompletableFuture<Void> operation, InstanceState success) {
+        return observeOperation(instance, operation, success, false);
+    }
+
+    private CompletableFuture<Void> observeOperation(
+            Instance instance, CompletableFuture<Void> operation, InstanceState success, boolean startupRecovery) {
         return operation.handle((ignored, error) -> {
-            if (closed) {
-                // Shutdown may cancel a Docker wait while its command is still in flight.
+            if (closed || (startupRecovery && System.nanoTime() - startupDeadlineNanos >= 0)) {
+                // Shutdown or the startup deadline may end coordination while Docker work is still in flight.
                 // Leave the reservation for startup reconciliation instead of guessing its outcome.
                 return null;
             }
@@ -423,38 +448,44 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
         );
     }
 
-    private CompletableFuture<Void> reconcileExistingInstances() {
+    private CompletableFuture<Void> reconcileExistingInstances(long deadlineNanos) {
         return instanceStore.list().thenCompose(instances -> {
+            if (closed) {
+                return CompletableFuture.failedFuture(new CancellationException("Instance service is closed"));
+            }
+            if (System.nanoTime() - deadlineNanos >= 0) {
+                return CompletableFuture.failedFuture(new TimeoutException("Startup reconciliation deadline expired"));
+            }
             if (instances.isEmpty()) {
                 return CompletableFuture.completedFuture(null);
             }
             Map<String, ComputeStatus> statuses = computeBackend.describeStatuses(instances);
-            return CompletableFuture.allOf(
-                                instances.stream()
-                                        .map(instance -> {
-                                            ComputeStatus status =
-                                                    statuses.getOrDefault(
-                                                            instance.id(),
-                                                            ComputeStatus.MISSING);
-
-                                            return switch (instance.state()) {
-                                                case RUNNING ->
-                                                        reconcileRunning(instance, status);
-                                                case STOPPED ->
-                                                        reconcileStopped(instance, status);
-                                                case STARTING ->
-                                                        reconcileStarting(instance, status);
-                                                case STOPPING ->
-                                                        reconcileStopping(instance, status);
-                                                case MISSING ->
-                                                        reconcileMissing(instance, status);
-                                                case DELETING ->
-                                                        deleteReservedInstance(instance);
-                                            };
-                                        })
-                                        .toArray(CompletableFuture[]::new)
-                        );
+            CompletableFuture<Void> recovery = CompletableFuture.completedFuture(null);
+            for (Instance instance : instances) {
+                recovery = recovery.thenCompose(ignored -> {
+                    if (closed) {
+                        return CompletableFuture.failedFuture(new CancellationException("Instance service is closed"));
+                    }
+                    if (System.nanoTime() - deadlineNanos >= 0) {
+                        return CompletableFuture.failedFuture(new TimeoutException("Startup reconciliation deadline expired"));
+                    }
+                    ComputeStatus status = statuses.getOrDefault(instance.id(), ComputeStatus.MISSING);
+                    return reconcileInstance(instance, status);
+                });
+            }
+            return recovery;
         });
+    }
+
+    private CompletableFuture<Void> reconcileInstance(Instance instance, ComputeStatus status) {
+        return switch (instance.state()) {
+            case RUNNING -> reconcileRunning(instance, status);
+            case STOPPED -> reconcileStopped(instance, status);
+            case STARTING -> reconcileStarting(instance, status);
+            case STOPPING -> reconcileStopping(instance, status);
+            case MISSING -> reconcileMissing(instance, status);
+            case DELETING -> deleteReservedInstance(instance);
+        };
     }
 
     private CompletableFuture<Void> reconcileRunning(Instance instance, ComputeStatus status) {
@@ -462,7 +493,9 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
             return CompletableFuture.completedFuture(null);
         }
         return instanceStore.update(instance, instance.toBuilder().state(InstanceState.STARTING).build())
-                .thenCompose(reserved -> reconcileStarting(reserved, status));
+                .thenCompose(reserved -> closed
+                        ? CompletableFuture.completedFuture(null)
+                        : reconcileStarting(reserved, status));
     }
 
     private CompletableFuture<Void> reconcileStopped(Instance instance, ComputeStatus status) {
@@ -470,7 +503,9 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
             return CompletableFuture.completedFuture(null);
         }
         return instanceStore.update(instance, instance.toBuilder().state(InstanceState.STOPPING).build())
-                .thenCompose(reserved -> reconcileStopping(reserved, status));
+                .thenCompose(reserved -> closed
+                        ? CompletableFuture.completedFuture(null)
+                        : reconcileStopping(reserved, status));
     }
 
     private CompletableFuture<Void> reconcileToRunning(Instance instance, ComputeStatus status) {
@@ -492,16 +527,18 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
             Instance instance,
             ComputeStatus status) {
 
-        return observeOperation(instance, invokeBackend(() -> reconcileToRunning(instance, status)), InstanceState.RUNNING);
+        return observeOperation(instance, invokeBackend(() -> reconcileToRunning(instance, status)),
+                InstanceState.RUNNING, true);
     }
 
     private CompletableFuture<Void> reconcileStopping(
             Instance instance,
             ComputeStatus status) {
         if (status == ComputeStatus.MISSING) {
-            return observeOperation(instance, CompletableFuture.completedFuture(null), InstanceState.MISSING);
+            return observeOperation(instance, CompletableFuture.completedFuture(null), InstanceState.MISSING, true);
         }
-        return observeOperation(instance, invokeBackend(() -> reconcileToStopped(instance, status)), InstanceState.STOPPED);
+        return observeOperation(instance, invokeBackend(() -> reconcileToStopped(instance, status)),
+                InstanceState.STOPPED, true);
     }
 
     private CompletableFuture<Void> reconcileMissing(Instance instance, ComputeStatus status) {

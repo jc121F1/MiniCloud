@@ -37,7 +37,8 @@ public abstract class InstanceServiceModule {
     @Provides @Singleton
     public static InstanceServiceImpl managedInstanceService(Clock clock, ComputeBackend backend,
             EventBus events, InstanceStore store, AuthorizationService authorization, RuntimeResources resources) {
-        return resources.own(new InstanceServiceImpl(clock, backend, events, store, authorization),
+        Duration startupDeadline = Duration.ofSeconds(Long.getLong("minicloud.instance.startup-deadline-seconds", 120L));
+        return resources.own(new InstanceServiceImpl(clock, backend, events, store, authorization, startupDeadline),
                 RuntimeResources.Phase.BACKEND);
     }
 

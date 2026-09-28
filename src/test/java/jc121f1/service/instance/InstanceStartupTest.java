@@ -15,11 +15,13 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 
 class InstanceStartupTest {
@@ -102,6 +104,31 @@ class InstanceStartupTest {
         Mockito.verify(store).update(stopping, missing);
         Mockito.verify(backend, Mockito.never()).create(Mockito.any());
         Mockito.verify(backend, Mockito.never()).stop(Mockito.any());
+    }
+
+    @Test
+    void startupDeadlinePreservesAnUnresolvedTransitionAndClosesTheService() {
+        Instance starting = Instance.builder().id("i-3").name("example").accountId("a-1")
+                .state(InstanceState.STARTING).revision(5L).build();
+        Instance later = Instance.builder().id("i-4").name("later").accountId("a-1")
+                .state(InstanceState.STARTING).revision(6L).build();
+        CompletableFuture<Void> start = new CompletableFuture<>();
+        Mockito.when(store.list()).thenReturn(CompletableFuture.completedFuture(List.of(starting, later)));
+        Mockito.when(backend.describeStatuses(List.of(starting, later))).thenReturn(Map.of(
+                "i-3", ComputeStatus.STOPPED, "i-4", ComputeStatus.STOPPED));
+        Mockito.when(backend.start(starting)).thenReturn(start);
+        InstanceServiceImpl boundedService = new InstanceServiceImpl(Clock.systemUTC(), backend, events, store,
+                Mockito.mock(AuthorizationService.class), Duration.ofMillis(100));
+
+        Assertions.assertThatThrownBy(boundedService::initialize)
+                .hasRootCauseInstanceOf(TimeoutException.class);
+        start.complete(null);
+
+        Mockito.verify(store, Mockito.never()).update(Mockito.any(), Mockito.any());
+        Mockito.verify(backend, Mockito.never()).create(Mockito.any());
+        Mockito.verify(backend, Mockito.never()).start(later);
+        Assertions.assertThatThrownBy(() -> boundedService.initialize())
+                .hasMessage("Instance service is closed");
     }
 
     @Test
