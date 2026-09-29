@@ -24,10 +24,9 @@ class WebServiceBootstrapTest {
     }
 
     @Test
-    void disabledMdnsLeavesTheManagerUntouched() {
-        JmDNSManager mdns = Mockito.mock(JmDNSManager.class);
+    void disabledMdnsDoesNotRequireAManager() {
         Javalin app = WebServiceBootstrap.create(new WebServiceBootstrap.Options(
-                "Test API", false, new MiniCloudExceptionMapper(), mdns, true, "test", 7079), config -> { });
+                "Test API", false, new MiniCloudExceptionMapper(), null, true, "test", 7079), config -> { });
 
         try {
             app.start(0);
@@ -35,6 +34,5 @@ class WebServiceBootstrapTest {
             app.stop();
         }
 
-        Mockito.verifyNoInteractions(mdns);
     }
 }

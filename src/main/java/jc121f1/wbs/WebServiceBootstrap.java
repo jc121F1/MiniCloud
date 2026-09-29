@@ -50,8 +50,10 @@ public final class WebServiceBootstrap {
         public Options {
             Objects.requireNonNull(openApiTitle, "openApiTitle");
             Objects.requireNonNull(exceptionMapper, "exceptionMapper");
-            Objects.requireNonNull(jmDNSManager, "jmDNSManager");
             Objects.requireNonNull(hostName, "hostName");
+            if (!disableJmDNS) {
+                Objects.requireNonNull(jmDNSManager, "jmDNSManager");
+            }
             if (port < 0 || port > 65535) {
                 throw new IllegalArgumentException("port must be between 0 and 65535");
             }
