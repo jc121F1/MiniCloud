@@ -3,9 +3,8 @@ package jc121f1.services.instance.exceptions;
 public class ValidationException extends jc121f1.common.validation.RequestValidationException {
     private final String message;
 
-    @Override
-    public String getMessage() {
-        return message;
+    public ValidationException(String message) {
+        this(message, java.util.List.of(new jc121f1.common.validation.FieldViolation("request", "invalid")));
     }
 
     public ValidationException(String message, java.util.List<jc121f1.common.validation.FieldViolation> violations) {
@@ -13,7 +12,8 @@ public class ValidationException extends jc121f1.common.validation.RequestValida
         this.message = message;
     }
 
-    public ValidationException(String message) {
-        this(message, java.util.List.of(new jc121f1.common.validation.FieldViolation("request", "invalid")));
+    @Override
+    public String getMessage() {
+        return message;
     }
 }

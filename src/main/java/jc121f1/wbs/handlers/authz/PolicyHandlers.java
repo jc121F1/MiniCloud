@@ -2,6 +2,7 @@ package jc121f1.wbs.handlers.authz;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.javalin.http.Context;
+import io.javalin.http.HttpResponseException;
 import io.javalin.openapi.HttpMethod;
 import io.javalin.openapi.OpenApi;
 import io.javalin.openapi.OpenApiContent;
@@ -176,9 +177,15 @@ public final class PolicyHandlers {
     private static <T> T body(Context ctx, Class<T> type) {
         // Enforce the byte limit before parsing; do not translate HTTP 413 into a JSON validation error.
         ctx.bodyAsBytes();
+        String contentType = ctx.header("Content-Type");
+        if (contentType == null || !contentType.toLowerCase(java.util.Locale.ROOT).startsWith("application/json")) {
+            throw new HttpResponseException(415, "Unsupported media type");
+        }
         T request;
         try {
             request = ctx.bodyAsClass(type);
+        } catch (HttpResponseException error) {
+            throw error;
         } catch (Exception error) {
             // Parser errors may quote request content. Return a fixed message.
             throw new PolicyValidationException("Invalid JSON request");
