@@ -33,6 +33,7 @@ import jc121f1.wbs.handlers.auth.LoginHandler;
 import jc121f1.wbs.handlers.auth.TransferOwnershipHandler;
 import jc121f1.services.authz.exceptions.PolicyConflictException;
 import jc121f1.services.instance.exceptions.ValidationException;
+import jc121f1.common.validation.RequestValidator;
 import jc121f1.services.instance.exceptions.ResourceNotFoundException;
 import jc121f1.wbs.services.AuthWebService;
 import lombok.SneakyThrows;
@@ -117,6 +118,20 @@ class AuthApiIntegrationTest {
         Assertions.assertThat(exchanged.statusCode()).isEqualTo(200);
         Assertions.assertThat(exchanged.body()).contains("issued-token");
         Mockito.verify(service, Mockito.never()).authenticate(Mockito.any());
+    }
+
+    @Test
+    void validation_http_error_contains_stable_field_details_and_never_echoes_secrets() {
+        Mockito.when(service.login(Mockito.any())).thenAnswer(invocation -> {
+            RequestValidator.validate(invocation.<LoginRequest>getArgument(0));
+            return null;
+        });
+
+        var response = post("/users/login", "{\"email\":\"\",\"password\":\"secret-value\"}", false);
+
+        Assertions.assertThat(response.statusCode()).isEqualTo(400);
+        Assertions.assertThat(response.body()).contains("Request validation failed", "email", "required")
+                .doesNotContain("secret-value");
     }
 
     @Test

@@ -8,6 +8,7 @@ import jc121f1.model.authz.PolicyDocument;
 import jc121f1.model.authz.PrincipalReference;
 import jc121f1.model.authz.ResourceReference;
 import jc121f1.model.authz.ServiceId;
+import jc121f1.common.validation.FieldViolation;
 import jc121f1.services.auth.store.CredentialStore;
 import jc121f1.services.auth.store.UserStore;
 import jc121f1.services.authz.authorization.PolicyAction;
@@ -126,7 +127,7 @@ public final class PolicyServiceImpl implements PolicyService {
         Objects.requireNonNull(caller, "caller");
         Objects.requireNonNull(policyId, "policyId");
         if (!PolicyValidator.isValidIdentifier(policyId)) {
-            throw new PolicyValidationException("Invalid policy ID");
+            throw new PolicyValidationException("Invalid policy ID", List.of(new FieldViolation("policyId", "invalid")));
         }
         authorize(caller, action, PolicyResourceType.POLICY, policyId);
     }
@@ -137,14 +138,16 @@ public final class PolicyServiceImpl implements PolicyService {
 
     private static void validateRevision(long revision) {
         if (revision < 1) {
-            throw new PolicyValidationException("Expected revision must be positive");
+            throw new PolicyValidationException("Expected revision must be positive",
+                    List.of(new FieldViolation("expectedRevision", "must_be_positive")));
         }
     }
 
     private static void validatePrincipal(AuthenticatedSession caller, PrincipalReference principal) {
         if (!PolicyValidator.isValidIdentifier(principal.accountId())
                 || !PolicyValidator.isValidIdentifier(principal.subjectId()) || principal.subjectType() == null) {
-            throw new PolicyValidationException("Invalid principal reference");
+            throw new PolicyValidationException("Invalid principal reference",
+                    List.of(new FieldViolation("principal", "invalid")));
         }
         if (!principal.accountId().equals(caller.accountId())) {
             throw new AuthorizationDeniedException();

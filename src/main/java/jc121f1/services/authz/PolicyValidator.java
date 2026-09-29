@@ -3,6 +3,7 @@ package jc121f1.services.authz;
 import jc121f1.model.authz.ActionDescriptor;
 import jc121f1.model.authz.PolicyDocument;
 import jc121f1.model.authz.ResourceReference;
+import jc121f1.common.validation.FieldViolation;
 import jc121f1.services.authz.exceptions.PolicyValidationException;
 
 import javax.inject.Inject;
@@ -103,7 +104,7 @@ public final class PolicyValidator {
 
     private static void require(boolean condition, String message) {
         if (!condition) {
-            throw new PolicyValidationException(message);
+            throw new PolicyValidationException(message, List.of(new FieldViolation("document", "invalid")));
         }
     }
 }

@@ -1,5 +1,7 @@
 package jc121f1.wbs.exceptions.customererrors;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 public abstract class CustomerFacingError {
 
     private final String message;
@@ -8,7 +10,8 @@ public abstract class CustomerFacingError {
         this.message = message;
     }
 
-    String getMessage() {
+    @JsonProperty("message")
+    public String getMessage() {
         return message;
     }
 

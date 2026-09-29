@@ -1,4 +1,7 @@
 package jc121f1.model.auth.api.request;
 
-public record ExchangeServiceCredentialRequest(String credentialId, String secret) {
+import jakarta.validation.constraints.NotBlank;
+
+public record ExchangeServiceCredentialRequest(@NotBlank(message = "required") String credentialId,
+                                               @NotBlank(message = "required") String secret) {
 }
