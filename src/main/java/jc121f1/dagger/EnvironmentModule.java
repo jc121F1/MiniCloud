@@ -6,10 +6,6 @@ import jc121f1.dagger.qualifiers.Debug;
 import jc121f1.dagger.qualifiers.DisableJmDNS;
 import jc121f1.dagger.qualifiers.DockerHost;
 import jc121f1.dagger.qualifiers.ExposeShutdownEndpoint;
-import jc121f1.dagger.qualifiers.RegistryMail;
-import jc121f1.dagger.qualifiers.RegistryPass;
-import jc121f1.dagger.qualifiers.RegistryUrl;
-import jc121f1.dagger.qualifiers.RegistryUser;
 
 import java.util.Locale;
 import java.util.Optional;
@@ -29,30 +25,6 @@ public class EnvironmentModule {
         return osName.toLowerCase(Locale.ROOT).startsWith("windows")
                 ? "npipe:////./pipe/dockerDesktopLinuxEngine"
                 : "unix:///var/run/docker.sock";
-    }
-
-    @Provides
-    @RegistryUser
-    String providerRegistryUser() {
-        return Optional.ofNullable(System.getenv("DOCKER_USER")).orElse(System.getProperty("DOCKER_HOST"));
-    }
-
-    @Provides
-    @RegistryPass
-    String providerRegistryPass() {
-        return Optional.ofNullable(System.getenv("DOCKER_PASS")).orElse(System.getProperty("DOCKER_PASS"));
-    }
-
-    @Provides
-    @RegistryUrl
-    String providerRegistryUrl() {
-        return Optional.ofNullable(System.getenv("DOCKER_URL")).orElse(System.getProperty("DOCKER_URL"));
-    }
-
-    @Provides
-    @RegistryMail
-    String providerRegistryMail() {
-        return Optional.ofNullable(System.getenv("DOCKER_MAIL")).orElse(System.getProperty("DOCKER_MAIL"));
     }
 
     @Provides

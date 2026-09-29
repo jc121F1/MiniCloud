@@ -9,10 +9,6 @@ import dagger.Binds;
 import dagger.Module;
 import dagger.Provides;
 import jc121f1.dagger.qualifiers.DockerHost;
-import jc121f1.dagger.qualifiers.RegistryMail;
-import jc121f1.dagger.qualifiers.RegistryPass;
-import jc121f1.dagger.qualifiers.RegistryUrl;
-import jc121f1.dagger.qualifiers.RegistryUser;
 import jc121f1.services.instance.InstanceService;
 import jc121f1.services.instance.InstanceServiceImpl;
 import jc121f1.services.instance.compute.ComputeBackend;
@@ -56,19 +52,11 @@ public abstract class InstanceServiceModule {
 
     @Provides
     @Singleton
-    public static DockerClient dockerClient(@RegistryUser String user,
-                                            @RegistryPass String pass,
-                                            @RegistryMail String mail,
-                                            @RegistryUrl String url,
-                                            @DockerHost String dockerHost,
+    public static DockerClient dockerClient(@DockerHost String dockerHost,
                                             RuntimeResources resources) {
         DockerClientConfig config = DefaultDockerClientConfig.createDefaultConfigBuilder()
                 .withDockerHost(dockerHost)
                 .withDockerTlsVerify(false)
-                .withRegistryUsername(user)
-                .withRegistryPassword(pass)
-                .withRegistryEmail(mail)
-                .withRegistryUrl(url)
                 .build();
 
         ApacheDockerHttpClient client = new ApacheDockerHttpClient.Builder()
