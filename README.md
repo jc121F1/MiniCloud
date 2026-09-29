@@ -148,6 +148,8 @@ Docker and requires both `DynamoDbLocalAvailable=True` and
 `DockerE2EAvailable=True`. Start DynamoDB Local on port 8000 before running
 either test. The Docker test also requires a working Docker daemon and the
 MiniCloud image. These tests are skipped when their environment flags are absent.
+GitHub Actions starts DynamoDB Local and pulls the public MiniCloud image before
+running the build with both flags enabled.
 
 ## Technology Stack
 
