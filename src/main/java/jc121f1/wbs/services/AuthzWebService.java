@@ -5,10 +5,9 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import io.javalin.Javalin;
 import io.javalin.http.HttpResponseException;
 import io.javalin.json.JavalinJackson;
-import io.javalin.openapi.plugin.OpenApiPlugin;
-import io.javalin.openapi.plugin.swagger.SwaggerPlugin;
 import jc121f1.dagger.authz.AuthzWebServiceComponent;
 import jc121f1.wbs.WebService;
+import jc121f1.wbs.WebServiceBootstrap;
 
 import javax.inject.Inject;
 import java.util.Map;
@@ -39,7 +38,9 @@ public final class AuthzWebService extends WebService {
     public Javalin create() {
         var handlers = component.policyHandlers();
         boolean disableJmDNS = component.disableJmDNS();
-        return Javalin.create(config -> {
+        return WebServiceBootstrap.create(new WebServiceBootstrap.Options(
+                "MiniCloud Authorization", false, component.exceptionMapper(), component.jmDNSManager(),
+                disableJmDNS, HOSTNAME, PORT), config -> {
             config.http.maxRequestSize = MAX_REQUEST_BYTES;
             config.http.strictContentTypes = true;
             config.jsonMapper(new JavalinJackson().updateMapper(mapper -> {
@@ -49,24 +50,10 @@ public final class AuthzWebService extends WebService {
                 mapper.disable(DeserializationFeature.ACCEPT_FLOAT_AS_INT);
                 mapper.enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
             }));
-            config.registerPlugin(new OpenApiPlugin(plugin -> plugin.withDefinitionConfiguration((version, definition) ->
-                    definition.info(info -> info.title("MiniCloud Authorization")))));
-            config.registerPlugin(new SwaggerPlugin());
-            config.routes.exception(Exception.class, component.exceptionMapper()::mapException);
             config.routes.exception(HttpResponseException.class, (error, ctx) -> ctx.status(error.getStatus())
                     .json(Map.of("statusCode", error.getStatus(), "message", "HTTP request rejected")));
             // Authentication is mandatory even if a future route omits authorization metadata.
             config.routes.beforeMatched(component.authenticateHandler());
-            config.events.serverStarted(() -> {
-                if (!disableJmDNS) {
-                    startJmdns(HOSTNAME, PORT);
-                }
-            });
-            config.events.serverStopping(() -> {
-                if (!disableJmDNS) {
-                    stopJmdns(HOSTNAME);
-                }
-            });
             config.routes.apiBuilder(() -> path("policies", () -> {
                 get(handlers::list);
                 post("create", handlers::create);

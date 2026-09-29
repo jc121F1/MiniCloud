@@ -1,11 +1,9 @@
 package jc121f1.wbs.services;
 
 import io.javalin.Javalin;
-import io.javalin.openapi.plugin.OpenApiPlugin;
-import io.javalin.openapi.plugin.redoc.ReDocPlugin;
-import io.javalin.openapi.plugin.swagger.SwaggerPlugin;
 import jc121f1.dagger.auth.AuthWebServiceComponent;
 import jc121f1.wbs.WebService;
+import jc121f1.wbs.WebServiceBootstrap;
 import jc121f1.wbs.handlers.auth.AuthOperation;
 import jc121f1.wbs.exceptions.MiniCloudExceptionMapper;
 
@@ -35,26 +33,9 @@ public class AuthWebService extends WebService {
     public Javalin create() {
         Boolean disableJmDNS = component.disableJmDNS();
         MiniCloudExceptionMapper exceptionMapper = component.exceptionMapper();
-        return Javalin.create(config -> {
-            config.registerPlugin(new OpenApiPlugin(pluginConfig -> {
-                pluginConfig.withDefinitionConfiguration((version, definition) -> {
-                    definition.info(info -> info.title("OpenAPI"));
-                });
-            }));
-            config.registerPlugin(new SwaggerPlugin());
-            config.registerPlugin(new ReDocPlugin());
-            config.routes.exception(Exception.class, exceptionMapper::mapException);
+        return WebServiceBootstrap.create(new WebServiceBootstrap.Options(
+                "OpenAPI", true, exceptionMapper, component.jmDNSManager(), disableJmDNS, HOSTNAME, PORT), config -> {
             config.routes.beforeMatched(component.authAuthorizationHandler());
-            config.events.serverStarted(() -> {
-                if (!disableJmDNS) {
-                    this.startJmdns(HOSTNAME, PORT);
-                }
-            });
-            config.events.serverStopping(() -> {
-                if (!disableJmDNS) {
-                    this.stopJmdns(HOSTNAME);
-                }
-            });
             config.routes.apiBuilder(() -> {
                 get(component.rootHandler());
                 path("users", () -> {
