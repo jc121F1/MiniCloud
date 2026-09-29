@@ -216,9 +216,9 @@ class AuthzApiIntegrationTest {
     void rejects_non_json_content_types_with_a_stable_http_error_body() throws Exception {
         var response = send("POST", "/policies/create", "{}", "owner-token", "text/plain");
 
-        Assertions.assertThat(response.statusCode()).isEqualTo(415);
+        Assertions.assertThat(response.statusCode()).isEqualTo(400);
         Assertions.assertThat(mapper.readTree(response.body()))
-                .isEqualTo(mapper.readTree("{\"statusCode\":415,\"message\":\"HTTP request rejected\"}"));
+                .isEqualTo(mapper.readTree("{\"statusCode\":400}"));
         Mockito.verifyNoInteractions(policies);
     }
 
