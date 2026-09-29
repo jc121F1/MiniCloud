@@ -7,6 +7,7 @@ import io.javalin.openapi.OpenApiContent;
 import io.javalin.openapi.OpenApiRequestBody;
 import io.javalin.openapi.OpenApiResponse;
 import jc121f1.model.auth.api.request.DeleteUserRequest;
+import jc121f1.model.auth.AuthContext;
 import jc121f1.model.auth.dao.User;
 import jc121f1.services.auth.AuthService;
 import org.jetbrains.annotations.NotNull;
@@ -35,7 +36,7 @@ public class DeleteUserHandler extends AuthHandler {
     public void handle(@NotNull Context ctx) {
         DeleteUserRequest request = ctx.bodyAsClass(DeleteUserRequest.class);
 
-        User user = authService.deleteUser(request);
+        User user = authService.deleteUser(AuthContext.require(ctx), request);
 
         ctx.json(user);
     }

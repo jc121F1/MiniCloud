@@ -74,7 +74,7 @@ dependencies {
 tasks {
     test {
         jvmArgs.add("-javaagent:${mockitoAgent.asPath}")
-        exclude("**/*EndToEndTest.class")
+        //exclude("**/*EndToEndTest.class")
         useJUnitPlatform()
         systemProperty("DISABLE_JMDNS", "true")
     }

@@ -646,7 +646,7 @@ class DynamoDbStoreTest {
             super(client, definition);
         }
 
-        protected CompletableFuture<Void> initialize() {
+        public CompletableFuture<Void> initialize() {
             return super.initialize();
         }
 

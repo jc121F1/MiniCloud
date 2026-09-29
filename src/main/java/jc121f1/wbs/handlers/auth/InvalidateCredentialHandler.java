@@ -7,6 +7,7 @@ import io.javalin.openapi.OpenApiContent;
 import io.javalin.openapi.OpenApiRequestBody;
 import io.javalin.openapi.OpenApiResponse;
 import jc121f1.model.auth.api.request.InvalidateCredentialRequest;
+import jc121f1.model.auth.AuthContext;
 import jc121f1.services.auth.AuthService;
 import org.jetbrains.annotations.NotNull;
 
@@ -30,7 +31,7 @@ public class InvalidateCredentialHandler extends AuthHandler {
     @Override
     public void handle(@NotNull Context ctx) {
         InvalidateCredentialRequest request = ctx.bodyAsClass(InvalidateCredentialRequest.class);
-        authService.invalidateCredential(request);
+        authService.invalidateCredential(AuthContext.require(ctx), request);
         ctx.status(204);
     }
 }

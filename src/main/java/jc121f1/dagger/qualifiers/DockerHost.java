@@ -8,5 +8,5 @@ import java.lang.annotation.RetentionPolicy;
 @Qualifier
 @Documented
 @Retention(RetentionPolicy.RUNTIME)
-public @interface RegistryUser {
+public @interface DockerHost {
 }

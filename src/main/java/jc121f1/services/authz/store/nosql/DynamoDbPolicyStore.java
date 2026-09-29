@@ -23,6 +23,7 @@ import software.amazon.awssdk.services.dynamodb.model.TransactionCanceledExcepti
 import software.amazon.awssdk.services.dynamodb.model.TransactionConflictException;
 
 import javax.inject.Inject;
+import javax.inject.Singleton;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +34,7 @@ import java.util.function.Function;
 import java.util.regex.Pattern;
 
 /** Authz revision/attachment rules; mapping, CRUD, queries and transactions come from the common store. */
+@Singleton
 public final class DynamoDbPolicyStore extends DynamoDbStore<PolicyRecord> implements PolicyStore {
     private static final String TABLE_NAME = "MiniCloudAuthorizationStore";
     private static final Pattern ID = Pattern.compile("[A-Za-z0-9_-]{1,128}");
@@ -42,7 +44,6 @@ public final class DynamoDbPolicyStore extends DynamoDbStore<PolicyRecord> imple
     @Inject
     public DynamoDbPolicyStore(DynamoDbAsyncClient client) {
         this(client, TABLE_NAME);
-        initialize().join();
     }
 
     /** Explicit table name and initialization for isolated persistence tests. */

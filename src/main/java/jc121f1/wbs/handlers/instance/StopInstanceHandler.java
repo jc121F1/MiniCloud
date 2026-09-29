@@ -7,6 +7,7 @@ import io.javalin.openapi.OpenApiContent;
 import io.javalin.openapi.OpenApiRequestBody;
 import io.javalin.openapi.OpenApiResponse;
 import jc121f1.model.instance.api.request.StopInstanceRequest;
+import jc121f1.model.auth.AuthContext;
 import jc121f1.model.instance.dao.Instance;
 import jc121f1.services.instance.InstanceService;
 import org.jetbrains.annotations.NotNull;
@@ -35,7 +36,7 @@ public class StopInstanceHandler extends InstanceHandler {
     public void handle(@NotNull Context ctx) {
         StopInstanceRequest request = ctx.bodyAsClass(StopInstanceRequest.class);
 
-        Instance instance = instanceService.stop(request);
+        Instance instance = instanceService.stop(AuthContext.require(ctx), request);
 
         ctx.json(instance);
     }

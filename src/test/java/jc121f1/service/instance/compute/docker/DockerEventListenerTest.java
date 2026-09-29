@@ -12,13 +12,17 @@ import jc121f1.services.instance.compute.docker.EventAction;
 import jc121f1.services.instance.events.EventBus;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.awaitility.Awaitility;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 
 import java.io.IOException;
+import java.io.Closeable;
+import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 
 @MiniCloudTest
@@ -44,6 +48,7 @@ public class DockerEventListenerTest {
         Mockito.when(dockerClient.eventsCmd()).thenReturn(eventsCmd);
 
         eventListener = new DockerEventListener(dockerClient, eventBus);
+        eventListener.initialize();
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<ResultCallback.Adapter<Event>> captor =
@@ -52,6 +57,11 @@ public class DockerEventListenerTest {
         Mockito.verify(eventsCmd).exec(captor.capture());
 
         callback = captor.getValue();
+    }
+
+    @AfterEach
+    void closeListener() throws IOException {
+        eventListener.close();
     }
 
     @Nested
@@ -196,6 +206,26 @@ public class DockerEventListenerTest {
     class When_the_event_stream_fails {
 
         @Test
+        void It_should_reconnect_and_ignore_events_from_the_failed_generation() throws IOException {
+            CompletableFuture<Event> pending = eventListener.waitFor(CONTAINER_ID, EventAction.START);
+
+            callback.onError(new IOException("stream reset"));
+            Assertions.assertThat(pending).isCompletedExceptionally();
+            Awaitility.await().atMost(Duration.ofSeconds(3)).untilAsserted(() ->
+                    Mockito.verify(eventsCmd, Mockito.times(2)).exec(Mockito.any()));
+            ArgumentCaptor<ResultCallback.Adapter<Event>> captor =
+                    ArgumentCaptor.forClass(ResultCallback.Adapter.class);
+            Mockito.verify(eventsCmd, Mockito.times(2)).exec(captor.capture());
+
+            CompletableFuture<Event> afterReconnect = eventListener.waitFor(CONTAINER_ID, EventAction.START);
+            captor.getAllValues().get(0).onNext(Mockito.mock(Event.class));
+            Assertions.assertThat(afterReconnect).isNotDone();
+            Event recoveredEvent = event(CONTAINER_ID, "start");
+            captor.getAllValues().get(1).onNext(recoveredEvent);
+            Assertions.assertThat(afterReconnect).isCompletedWithValue(recoveredEvent);
+        }
+
+        @Test
         void It_should_complete_pending_futures_exceptionally() {
             CompletableFuture<Event> first =
                     eventListener.waitFor(CONTAINER_ID, EventAction.START);
@@ -216,7 +246,7 @@ public class DockerEventListenerTest {
         }
 
         @Test
-        void It_should_clear_pending_events() {
+        void It_should_reject_later_waits_after_stream_failure() {
             CompletableFuture<Event> first =
                     eventListener.waitFor(CONTAINER_ID, EventAction.START);
 
@@ -229,7 +259,18 @@ public class DockerEventListenerTest {
 
             Assertions.assertThat(second)
                     .isNotSameAs(first)
-                    .isNotDone();
+                    .isCompletedExceptionally();
+            Assertions.assertThatThrownBy(second::join)
+                    .hasRootCauseMessage("Docker event stream failed");
+        }
+
+        @Test
+        void It_should_reject_pending_and_later_waits_when_the_stream_ends() {
+            CompletableFuture<Event> first = eventListener.waitFor(CONTAINER_ID, EventAction.START);
+            callback.onComplete();
+            Assertions.assertThat(first).isCompletedExceptionally();
+            Assertions.assertThat(eventListener.waitFor(CONTAINER_ID, EventAction.START))
+                    .isCompletedExceptionally();
         }
     }
 
@@ -246,6 +287,87 @@ public class DockerEventListenerTest {
             Assertions.assertThat(future)
                     .isCancelled();
         }
+
+        @Test
+        void It_should_reject_waits_after_close_and_ignore_late_events() throws IOException {
+            eventListener.close();
+            Assertions.assertThat(eventListener.waitFor(CONTAINER_ID, EventAction.START)).isCancelled();
+            callback.onNext(Mockito.mock(Event.class));
+            Mockito.verifyNoInteractions(eventBus);
+        }
+
+        @Test
+        void It_should_close_the_stream_only_once() throws IOException {
+            Closeable stream = Mockito.mock(Closeable.class);
+            callback.onStart(stream);
+            eventListener.close();
+            eventListener.close();
+            Mockito.verify(stream).close();
+        }
+
+        @Test
+        void It_should_cancel_waits_even_when_stream_close_fails() throws IOException {
+            Closeable stream = Mockito.mock(Closeable.class);
+            callback.onStart(stream);
+            Mockito.doThrow(new IOException("close failed")).when(stream).close();
+            CompletableFuture<Event> future = eventListener.waitFor(CONTAINER_ID, EventAction.START);
+            Assertions.assertThatThrownBy(eventListener::close).isInstanceOf(IOException.class);
+            Assertions.assertThat(future).isCancelled();
+            Assertions.assertThat(eventListener.waitFor(CONTAINER_ID, EventAction.START)).isCancelled();
+        }
+
+        @Test
+        void It_should_reject_waits_registered_by_a_cancellation_callback() throws IOException {
+            CompletableFuture<Event> pending = eventListener.waitFor(CONTAINER_ID, EventAction.START);
+            CompletableFuture<CompletableFuture<Event>> retry = pending.handle((event, failure) ->
+                    eventListener.waitFor(OTHER_CONTAINER_ID, EventAction.DIE));
+            eventListener.close();
+            Assertions.assertThat(retry.join()).isCancelled();
+        }
+    }
+
+    @Test
+    void It_should_close_a_partially_started_stream_when_construction_fails() throws IOException {
+        Closeable stream = Mockito.mock(Closeable.class);
+        IllegalStateException failure = new IllegalStateException("stream startup failed");
+        Mockito.doAnswer(call -> {
+            ResultCallback<Event> partialCallback = call.getArgument(0);
+            partialCallback.onStart(stream);
+            throw failure;
+        }).when(eventsCmd).exec(Mockito.any());
+
+        Assertions.assertThatThrownBy(() -> new DockerEventListener(dockerClient, eventBus).initialize()).isSameAs(failure);
+        Mockito.verify(stream).close();
+        Mockito.verify(dockerClient, Mockito.never()).close();
+    }
+
+    @Test
+    void It_should_preserve_startup_failure_when_partial_stream_cleanup_fails() throws IOException {
+        Closeable stream = Mockito.mock(Closeable.class);
+        IOException cleanupFailure = new IOException("stream close failed");
+        Mockito.doThrow(cleanupFailure).when(stream).close();
+        IllegalStateException failure = new IllegalStateException("stream startup failed");
+        Mockito.doAnswer(call -> {
+            ResultCallback<Event> partialCallback = call.getArgument(0);
+            partialCallback.onStart(stream);
+            throw failure;
+        }).when(eventsCmd).exec(Mockito.any());
+
+        Assertions.assertThatThrownBy(() -> new DockerEventListener(dockerClient, eventBus).initialize()).isSameAs(failure);
+        Assertions.assertThat(failure.getSuppressed()).containsExactly(cleanupFailure);
+    }
+
+    @Test
+    void It_should_release_cancelled_and_externally_failed_waits() {
+        CompletableFuture<Event> first = eventListener.waitFor(CONTAINER_ID, EventAction.START);
+        first.cancel(false);
+        CompletableFuture<Event> second = eventListener.waitFor(CONTAINER_ID, EventAction.START);
+        Assertions.assertThat(second).isNotDone();
+        second.completeExceptionally(new IllegalStateException("command failed"));
+        CompletableFuture<Event> third = eventListener.waitFor(CONTAINER_ID, EventAction.START);
+        Assertions.assertThat(third).isNotDone();
+        callback.onNext(event(CONTAINER_ID, "start"));
+        Assertions.assertThat(third).isCompleted();
     }
 
     @Test

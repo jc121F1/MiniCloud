@@ -36,12 +36,15 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestClassOrder;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
 @MiniCloudTest
+@EnabledIfEnvironmentVariable(named = "DynamoDbLocalAvailable", matches = "True")
+@EnabledIfEnvironmentVariable(named = "DockerE2EAvailable", matches = "True")
 @TestClassOrder(ClassOrderer.OrderAnnotation.class)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -63,6 +66,10 @@ class InstanceServiceEndToEndTest {
         dockerClient = component.dockerClient();
 
         String bearerToken = setupAuth();
+        component.storeInitializer().initialize();
+        component.initializableInstanceStore().initialize().join();
+        component.computeBackend().initialize();
+        component.managedInstanceService().initialize();
         webService = new InstanceWebService(component).create();
         webService.start(0);
 
@@ -390,6 +397,7 @@ class InstanceServiceEndToEndTest {
     @SneakyThrows
     private String setupAuth() {
         AuthWebServiceComponent authWebServiceComponent = DaggerAuthWebServiceComponent.create();
+        authWebServiceComponent.storeInitializer().initialize();
         authWebService = new AuthWebService(authWebServiceComponent).create();
         authWebService.start(0);
 

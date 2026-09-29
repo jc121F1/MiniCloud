@@ -7,6 +7,7 @@ import io.javalin.openapi.OpenApiContent;
 import io.javalin.openapi.OpenApiRequestBody;
 import io.javalin.openapi.OpenApiResponse;
 import jc121f1.model.auth.api.request.CreateUserRequest;
+import jc121f1.model.auth.AuthContext;
 import jc121f1.model.auth.dao.User;
 import jc121f1.services.auth.AuthService;
 import org.jetbrains.annotations.NotNull;
@@ -35,7 +36,8 @@ public class CreateUserHandler extends AuthHandler {
     public void handle(@NotNull Context ctx) {
         CreateUserRequest request = ctx.bodyAsClass(CreateUserRequest.class);
 
-        User user = authService.createUser(request);
+        User user = request.accountId() == null ? authService.createUser(request)
+                : authService.createUser(AuthContext.require(ctx), request);
 
         ctx.json(user);
     }

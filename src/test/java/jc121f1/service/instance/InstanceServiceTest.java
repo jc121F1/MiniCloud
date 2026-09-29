@@ -1,6 +1,11 @@
 package jc121f1.service.instance;
 
 import jc121f1.annotations.MiniCloudTest;
+import jc121f1.model.auth.dao.AuthenticatedSession;
+import jc121f1.model.auth.dao.Session;
+import jc121f1.model.authz.AuthorizationDecision;
+import jc121f1.services.authz.AuthorizationService;
+import jc121f1.services.instance.authorization.InstanceAction;
 import jc121f1.model.instance.ComputeStatus;
 import jc121f1.model.instance.InstanceState;
 import jc121f1.model.instance.api.request.CreateInstanceRequest;
@@ -11,7 +16,6 @@ import jc121f1.model.instance.api.request.StartInstanceRequest;
 import jc121f1.model.instance.api.request.StopInstanceRequest;
 import jc121f1.model.instance.dao.Instance;
 import jc121f1.services.instance.compute.ComputeBackend;
-import jc121f1.services.instance.InstanceService;
 import jc121f1.services.instance.InstanceServiceImpl;
 import jc121f1.services.instance.compute.docker.EventAction;
 import jc121f1.services.instance.events.EventBus;
@@ -47,19 +51,26 @@ public class InstanceServiceTest {
     private static final String INSTANCE_NAME = "INSTANCE_NAME";
     private static final int DEFAULT_CPU = 1;
     private static final int DEFAULT_MEMORY = 1;
+    private static final AuthenticatedSession CALLER =
+            new AuthenticatedSession("a-123", "u-123", Session.SubjectType.USER);
 
     @Mock private Clock clock;
     @Mock private ComputeBackend computeBackend;
     @Mock private InstanceStore instanceStore;
+    @Mock private AuthorizationService authorizationService;
     @Spy private EventBus eventBus = new SimpleEventBus(Executors.newVirtualThreadPerTaskExecutor());
 
     @Nested class Given_an_instance_service {
-        InstanceService instanceService;
+        InstanceServiceImpl instanceService;
         ConcurrentMap<String, Instance> instancesById;
         ConcurrentMap<String, String> idsByName;
 
         @BeforeEach
         void setup() {
+            Mockito.lenient().when(authorizationService.evaluate(Mockito.any(),
+                            Mockito.any(InstanceAction.class), Mockito.any()))
+                    .thenReturn(new AuthorizationDecision(AuthorizationDecision.Outcome.ALLOW,
+                            AuthorizationDecision.Reason.POLICY_ALLOW, List.of()));
             instancesById = new ConcurrentHashMap<>();
             idsByName = new ConcurrentHashMap<>();
             Mockito.lenient().when(computeBackend.start(Mockito.any()))
@@ -115,7 +126,8 @@ public class InstanceServiceTest {
                         idsByName.remove(deleted.name(), deleted.id());
                         return CompletableFuture.completedFuture(null);
                     });
-            instanceService = new InstanceServiceImpl(clock, computeBackend, eventBus, instanceStore);
+            instanceService = new InstanceServiceImpl(clock, computeBackend, eventBus, instanceStore, authorizationService);
+            instanceService.initialize();
         }
 
         @Nested class When_receiving_a_valid_create_request {
@@ -129,7 +141,7 @@ public class InstanceServiceTest {
                         .build();
                 createdAt = Instant.parse("2026-01-01T00:00:00Z");
                 Mockito.when(clock.instant()).thenReturn(createdAt);
-                instance = instanceService.create(request);
+                instance = instanceService.create(CALLER, request);
             }
 
             @Test void It_should_return_an_instance() {
@@ -172,20 +184,20 @@ public class InstanceServiceTest {
                             .name(INSTANCE_NAME).cpu(DEFAULT_CPU).memory(DEFAULT_MEMORY)
                             .build();
                     Mockito.when(clock.instant()).thenReturn(Instant.now());
-                    instance = instanceService.create(request);
-                    instance = instanceService.get(GetInstanceRequest.builder()
+                    instance = instanceService.create(CALLER, request);
+                    instance = instanceService.get(CALLER, GetInstanceRequest.builder()
                             .instanceId(instance.id()).build());
                 }
 
                 @Test void It_should_throw_exception() {
-                    Assertions.assertThatThrownBy(() -> instanceService.create(request)).hasMessageContainingAll(
+                    Assertions.assertThatThrownBy(() -> instanceService.create(CALLER, request)).hasMessageContainingAll(
                             INSTANCE_NAME, "already exists"
                     );
                 }
 
                 @Test void It_should_only_create_one_instance() {
-                    Assertions.assertThat(instanceService.list(new ListInstanceRequest())).hasSize(1);
-                    Assertions.assertThat(instanceService.list(new ListInstanceRequest()).getFirst()).isEqualTo(instance);
+                    Assertions.assertThat(instanceService.list(CALLER, new ListInstanceRequest())).hasSize(1);
+                    Assertions.assertThat(instanceService.list(CALLER, new ListInstanceRequest()).getFirst()).isEqualTo(instance);
                 }
             }
 
@@ -205,8 +217,8 @@ public class InstanceServiceTest {
                             .build();
 
                     Mockito.when(clock.instant()).thenReturn(Instant.now());
-                    instance1 = instanceService.create(request1);
-                    instance2 = instanceService.create(request2);
+                    instance1 = instanceService.create(CALLER, request1);
+                    instance2 = instanceService.create(CALLER, request2);
                 }
 
                 @Test void It_should_create_both_instances() {
@@ -230,7 +242,7 @@ public class InstanceServiceTest {
 
             @Nested class With_no_instances_stored {
                 @BeforeEach void setup() {
-                    response = instanceService.list(request);
+                    response = instanceService.list(CALLER, request);
                 }
 
                 @Test void It_should_return_an_empty_list() {
@@ -242,9 +254,9 @@ public class InstanceServiceTest {
                 Instance expected;
 
                 @BeforeEach void setup() {
-                    expected = instanceService.create(CreateInstanceRequest.builder()
+                    expected = instanceService.create(CALLER, CreateInstanceRequest.builder()
                             .name(INSTANCE_NAME).cpu(DEFAULT_CPU).memory(DEFAULT_MEMORY).build());
-                    response = instanceService.list(new ListInstanceRequest());
+                    response = instanceService.list(CALLER, new ListInstanceRequest());
                 }
 
                 @Test void It_should_return_a_list_of_one_instance_stored() {
@@ -269,7 +281,7 @@ public class InstanceServiceTest {
 
             @BeforeEach
             void setup() {
-                expected = instanceService.create(CreateInstanceRequest.builder()
+                expected = instanceService.create(CALLER, CreateInstanceRequest.builder()
                         .name(INSTANCE_NAME)
                         .cpu(DEFAULT_CPU)
                         .memory(DEFAULT_MEMORY)
@@ -286,7 +298,7 @@ public class InstanceServiceTest {
                             .instanceId(expected.id())
                             .build();
 
-                    response = instanceService.get(request);
+                    response = instanceService.get(CALLER, request);
                 }
 
                 @Test
@@ -308,7 +320,7 @@ public class InstanceServiceTest {
                             .name(expected.name())
                             .build();
 
-                    response = instanceService.get(request);
+                    response = instanceService.get(CALLER, request);
                 }
 
                 @Test
@@ -328,7 +340,7 @@ public class InstanceServiceTest {
                             .instanceId("i-does-not-exist")
                             .build();
 
-                    Assertions.assertThatThrownBy(() -> instanceService.get(request))
+                    Assertions.assertThatThrownBy(() -> instanceService.get(CALLER, request))
                             .hasMessageContaining("Instance not found");
                 }
             }
@@ -339,7 +351,7 @@ public class InstanceServiceTest {
             GetInstanceRequest request = GetInstanceRequest.builder()
                     .build();
 
-            Assertions.assertThatThrownBy(() -> instanceService.get(request))
+            Assertions.assertThatThrownBy(() -> instanceService.get(CALLER, request))
                     .hasMessageContaining("name")
                     .hasMessageContaining("instanceId");
         }
@@ -351,12 +363,12 @@ public class InstanceServiceTest {
 
             @BeforeEach
             void setup() {
-                expected = instanceService.create(CreateInstanceRequest.builder()
+                expected = instanceService.create(CALLER, CreateInstanceRequest.builder()
                         .name(INSTANCE_NAME)
                         .cpu(DEFAULT_CPU)
                         .memory(DEFAULT_MEMORY)
                         .build());
-                expected = instanceService.get(GetInstanceRequest.builder()
+                expected = instanceService.get(CALLER, GetInstanceRequest.builder()
                         .instanceId(expected.id()).build());
             }
 
@@ -368,7 +380,7 @@ public class InstanceServiceTest {
                             .instanceId(expected.id())
                             .build();
 
-                    response = instanceService.delete(request);
+                    response = instanceService.delete(CALLER, request);
                 }
 
                 @Test
@@ -378,7 +390,7 @@ public class InstanceServiceTest {
 
                 @Test
                 void Instance_should_no_longer_be_listable() {
-                    Assertions.assertThat(instanceService.list(new ListInstanceRequest())).isEmpty();
+                    Assertions.assertThat(instanceService.list(CALLER, new ListInstanceRequest())).isEmpty();
                 }
 
                 @Test
@@ -387,7 +399,7 @@ public class InstanceServiceTest {
                             .instanceId(expected.id())
                             .build();
 
-                    Assertions.assertThatThrownBy(() -> instanceService.get(request))
+                    Assertions.assertThatThrownBy(() -> instanceService.get(CALLER, request))
                             .hasMessageContaining("Instance not found");
                 }
 
@@ -397,7 +409,7 @@ public class InstanceServiceTest {
                             .name(expected.name())
                             .build();
 
-                    Assertions.assertThatThrownBy(() -> instanceService.get(request))
+                    Assertions.assertThatThrownBy(() -> instanceService.get(CALLER, request))
                             .hasMessageContaining("Instance not found");
                 }
             }
@@ -410,7 +422,7 @@ public class InstanceServiceTest {
                             .name(expected.name())
                             .build();
 
-                    response = instanceService.delete(request);
+                    response = instanceService.delete(CALLER, request);
                 }
 
                 @Test
@@ -420,7 +432,7 @@ public class InstanceServiceTest {
 
                 @Test
                 void Instance_should_no_longer_be_listable() {
-                    Assertions.assertThat(instanceService.list(new ListInstanceRequest())).isEmpty();
+                    Assertions.assertThat(instanceService.list(CALLER, new ListInstanceRequest())).isEmpty();
                 }
 
                 @Test
@@ -429,7 +441,7 @@ public class InstanceServiceTest {
                             .instanceId(expected.id())
                             .build();
 
-                    Assertions.assertThatThrownBy(() -> instanceService.get(request))
+                    Assertions.assertThatThrownBy(() -> instanceService.get(CALLER, request))
                             .hasMessageContaining("Instance not found");
                 }
 
@@ -439,7 +451,7 @@ public class InstanceServiceTest {
                             .name(expected.name())
                             .build();
 
-                    Assertions.assertThatThrownBy(() -> instanceService.get(request))
+                    Assertions.assertThatThrownBy(() -> instanceService.get(CALLER, request))
                             .hasMessageContaining("Instance not found");
                 }
             }
@@ -450,7 +462,7 @@ public class InstanceServiceTest {
             DeleteInstanceRequest request = DeleteInstanceRequest.builder()
                     .build();
 
-            Assertions.assertThatThrownBy(() -> instanceService.delete(request))
+            Assertions.assertThatThrownBy(() -> instanceService.delete(CALLER, request))
                     .hasMessageContaining("name")
                     .hasMessageContaining("instanceId");
         }
@@ -461,7 +473,7 @@ public class InstanceServiceTest {
                     .instanceId("i-does-not-exist")
                     .build();
 
-            Assertions.assertThatThrownBy(() -> instanceService.delete(request))
+            Assertions.assertThatThrownBy(() -> instanceService.delete(CALLER, request))
                     .hasMessageContaining("Instance not found");
         }
 
@@ -471,13 +483,13 @@ public class InstanceServiceTest {
 
             @BeforeEach
             void setup() {
-                instance = instanceService.create(CreateInstanceRequest.builder()
+                instance = instanceService.create(CALLER, CreateInstanceRequest.builder()
                         .name(INSTANCE_NAME)
                         .cpu(DEFAULT_CPU)
                         .memory(DEFAULT_MEMORY)
                         .build());
 
-                instanceService.stop(StopInstanceRequest.builder().instanceId(instance.id()).build());
+                instanceService.stop(CALLER, StopInstanceRequest.builder().instanceId(instance.id()).build());
             }
 
             @Test
@@ -486,7 +498,7 @@ public class InstanceServiceTest {
                         .instanceId("i-does-not-exist")
                         .build();
 
-                Assertions.assertThatThrownBy(() -> instanceService.start(request))
+                Assertions.assertThatThrownBy(() -> instanceService.start(CALLER, request))
                         .hasMessageContaining("Instance not found");
             }
 
@@ -496,7 +508,7 @@ public class InstanceServiceTest {
                         .instanceId(instance.id())
                         .build();
 
-                Instance response = instanceService.start(request);
+                Instance response = instanceService.start(CALLER, request);
 
                 Assertions.assertThat(response).isEqualTo(instance);
                 Assertions.assertThat(response.state()).isEqualTo(InstanceState.STARTING);
@@ -508,14 +520,14 @@ public class InstanceServiceTest {
                         .name(instance.name())
                         .build();
 
-                Instance response = instanceService.start(request);
+                Instance response = instanceService.start(CALLER, request);
 
                 Assertions.assertThat(response.state()).isEqualTo(InstanceState.STARTING);
             }
 
             @Test
             void It_should_reject_an_instance_that_cannot_be_started() {
-                instance = instanceService.create(CreateInstanceRequest.builder()
+                instance = instanceService.create(CALLER, CreateInstanceRequest.builder()
                         .name(INSTANCE_NAME + "a")
                         .cpu(DEFAULT_CPU)
                         .memory(DEFAULT_MEMORY)
@@ -525,7 +537,7 @@ public class InstanceServiceTest {
                         .instanceId(instance.id())
                         .build();
 
-                Assertions.assertThatThrownBy(() -> instanceService.start(request))
+                Assertions.assertThatThrownBy(() -> instanceService.start(CALLER, request))
                         .hasMessageContaining("not in a startable state");
             }
 
@@ -534,7 +546,7 @@ public class InstanceServiceTest {
                 StartInstanceRequest request = StartInstanceRequest.builder()
                         .build();
 
-                Assertions.assertThatThrownBy(() -> instanceService.start(request))
+                Assertions.assertThatThrownBy(() -> instanceService.start(CALLER, request))
                         .hasMessageContaining("name")
                         .hasMessageContaining("instanceId");
             }
@@ -546,7 +558,7 @@ public class InstanceServiceTest {
 
             @BeforeEach
             void setup() {
-                instance = instanceService.create(CreateInstanceRequest.builder()
+                instance = instanceService.create(CALLER, CreateInstanceRequest.builder()
                         .name(INSTANCE_NAME)
                         .cpu(DEFAULT_CPU)
                         .memory(DEFAULT_MEMORY)
@@ -559,7 +571,7 @@ public class InstanceServiceTest {
                         .instanceId(instance.id())
                         .build();
 
-                Instance response = instanceService.stop(request);
+                Instance response = instanceService.stop(CALLER, request);
 
                 Assertions.assertThat(response.id()).isEqualTo(instance.id());
                 Assertions.assertThat(response.state()).isEqualTo(InstanceState.STOPPING);
@@ -571,7 +583,7 @@ public class InstanceServiceTest {
                         .name(instance.name())
                         .build();
 
-                Instance response = instanceService.stop(request);
+                Instance response = instanceService.stop(CALLER, request);
 
                 Assertions.assertThat(response.state()).isEqualTo(InstanceState.STOPPING);
             }
@@ -582,10 +594,10 @@ public class InstanceServiceTest {
                         .instanceId(instance.id())
                         .build();
 
-                instanceService.stop(request);
+                instanceService.stop(CALLER, request);
 
-                Assertions.assertThatThrownBy(() -> instanceService.stop(request))
-                        .hasMessageContaining("not in a startable state");
+                Assertions.assertThatThrownBy(() -> instanceService.stop(CALLER, request))
+                        .hasMessageContaining("not in a stoppable state");
             }
 
             @Test
@@ -593,7 +605,7 @@ public class InstanceServiceTest {
                 StopInstanceRequest request = StopInstanceRequest.builder()
                         .build();
 
-                Assertions.assertThatThrownBy(() -> instanceService.stop(request))
+                Assertions.assertThatThrownBy(() -> instanceService.stop(CALLER, request))
                         .hasMessageContaining("name")
                         .hasMessageContaining("instanceId");
             }
@@ -612,7 +624,7 @@ public class InstanceServiceTest {
             for (int i = 0; i < threadCount; i++) {
                 futures.add(executor.submit(() -> {
                     start.await();
-                    return instanceService.create(
+                    return instanceService.create(CALLER,
                             CreateInstanceRequest.builder()
                                     .name(INSTANCE_NAME)
                                     .cpu(DEFAULT_CPU)
@@ -637,7 +649,7 @@ public class InstanceServiceTest {
             executor.shutdown();
 
             Assertions.assertThat(successfulCreates).isEqualTo(1);
-            Assertions.assertThat(instanceService.list(new ListInstanceRequest())).hasSize(1);
+            Assertions.assertThat(instanceService.list(CALLER, new ListInstanceRequest())).hasSize(1);
         }
 
         @Nested
@@ -649,7 +661,7 @@ public class InstanceServiceTest {
 
                 reconcile(instance, Map.of(instance.id(), ComputeStatus.STOPPED));
 
-                Mockito.verify(computeBackend).start(instance);
+                Mockito.verify(computeBackend).start(instance.toBuilder().state(InstanceState.STARTING).build());
                 Assertions.assertThat(instancesById.get(instance.id()).state())
                         .isEqualTo(InstanceState.RUNNING);
             }
@@ -661,8 +673,9 @@ public class InstanceServiceTest {
                 reconcile(instance, Map.of(instance.id(), ComputeStatus.MISSING));
 
                 InOrder inOrder = Mockito.inOrder(computeBackend);
-                inOrder.verify(computeBackend).create(instance);
-                inOrder.verify(computeBackend).start(instance);
+                Instance reserved = instance.toBuilder().state(InstanceState.STARTING).build();
+                inOrder.verify(computeBackend).create(reserved);
+                inOrder.verify(computeBackend).start(reserved);
             }
 
             @Test
@@ -671,7 +684,7 @@ public class InstanceServiceTest {
 
                 reconcile(instance, Map.of(instance.id(), ComputeStatus.RUNNING));
 
-                Mockito.verify(computeBackend).stop(instance);
+                Mockito.verify(computeBackend).stop(instance.toBuilder().state(InstanceState.STOPPING).build());
                 Assertions.assertThat(instancesById.get(instance.id()).state())
                         .isEqualTo(InstanceState.STOPPED);
             }
@@ -704,8 +717,9 @@ public class InstanceServiceTest {
 
                 reconcile(instance, Map.of());
 
-                Mockito.verify(computeBackend).create(instance);
-                Mockito.verify(computeBackend).start(instance);
+                Instance reserved = instance.toBuilder().state(InstanceState.STARTING).build();
+                Mockito.verify(computeBackend).create(reserved);
+                Mockito.verify(computeBackend).start(reserved);
             }
 
             @Test
@@ -754,7 +768,7 @@ public class InstanceServiceTest {
                 Mockito.when(computeBackend.describeStatuses(List.of(instance)))
                         .thenReturn(statuses);
 
-                new InstanceServiceImpl(clock, computeBackend, eventBus, instanceStore);
+                new InstanceServiceImpl(clock, computeBackend, eventBus, instanceStore, authorizationService).initialize();
             }
         }
 
@@ -769,7 +783,7 @@ public class InstanceServiceTest {
                 Instance instanceAfter;
                 @BeforeEach
                 void setup() {
-                    instanceBefore =  instanceService.create(CreateInstanceRequest.builder()
+                    instanceBefore =  instanceService.create(CALLER, CreateInstanceRequest.builder()
                             .name(INSTANCE_NAME)
                             .cpu(DEFAULT_CPU)
                             .memory(DEFAULT_MEMORY)
@@ -779,7 +793,7 @@ public class InstanceServiceTest {
 
                     Awaitility.await()
                             .untilAsserted(() -> {
-                                instanceAfter = instanceService.get(
+                                instanceAfter = instanceService.get(CALLER,
                                         GetInstanceRequest.builder()
                                                 .instanceId(instanceBefore.id())
                                                 .build());
@@ -799,7 +813,7 @@ public class InstanceServiceTest {
                 Instance instanceAfter;
                 @BeforeEach
                 void setup() {
-                    instanceBefore =  instanceService.create(CreateInstanceRequest.builder()
+                    instanceBefore =  instanceService.create(CALLER, CreateInstanceRequest.builder()
                             .name(INSTANCE_NAME)
                             .cpu(DEFAULT_CPU)
                             .memory(DEFAULT_MEMORY)
@@ -809,7 +823,7 @@ public class InstanceServiceTest {
 
                     Awaitility.await()
                             .untilAsserted(() -> {
-                                instanceAfter = instanceService.get(
+                                instanceAfter = instanceService.get(CALLER,
                                         GetInstanceRequest.builder()
                                                 .instanceId(instanceBefore.id())
                                                 .build());
@@ -822,7 +836,7 @@ public class InstanceServiceTest {
 
                     Awaitility.await()
                             .untilAsserted(() -> {
-                                instanceAfter = instanceService.get(
+                                instanceAfter = instanceService.get(CALLER,
                                         GetInstanceRequest.builder()
                                                 .instanceId(instanceBefore.id())
                                                 .build());
@@ -841,7 +855,7 @@ public class InstanceServiceTest {
                 Instance instanceAfter;
                 @BeforeEach
                 void setup() {
-                    instanceBefore =  instanceService.create(CreateInstanceRequest.builder()
+                    instanceBefore =  instanceService.create(CALLER, CreateInstanceRequest.builder()
                             .name(INSTANCE_NAME)
                             .cpu(DEFAULT_CPU)
                             .memory(DEFAULT_MEMORY)
@@ -851,7 +865,7 @@ public class InstanceServiceTest {
 
                     Awaitility.await()
                             .untilAsserted(() -> {
-                                instanceAfter = instanceService.get(
+                                instanceAfter = instanceService.get(CALLER,
                                         GetInstanceRequest.builder()
                                                 .instanceId(instanceBefore.id())
                                                 .build());

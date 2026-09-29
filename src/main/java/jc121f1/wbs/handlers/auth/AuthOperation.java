@@ -7,5 +7,6 @@ public enum AuthOperation implements RouteRole {
     CREATE_USER,
     DESCRIBE_USER,
     DELETE_USER,
-    INVALIDATE_CREDENTIAL
+    INVALIDATE_CREDENTIAL,
+    TRANSFER_OWNERSHIP
 }

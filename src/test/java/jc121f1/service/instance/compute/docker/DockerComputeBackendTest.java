@@ -4,9 +4,12 @@ import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.CreateContainerCmd;
 import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.command.ListContainersCmd;
+import com.github.dockerjava.api.command.InspectContainerCmd;
+import com.github.dockerjava.api.command.InspectContainerResponse;
 import com.github.dockerjava.api.command.RemoveContainerCmd;
 import com.github.dockerjava.api.command.StartContainerCmd;
 import com.github.dockerjava.api.command.StopContainerCmd;
+import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.Container;
 import com.github.dockerjava.api.model.Event;
 import com.github.dockerjava.api.model.HostConfig;
@@ -20,6 +23,7 @@ import jc121f1.services.instance.compute.docker.EventAction;
 import jc121f1.services.instance.events.EventBus;
 import jc121f1.services.instance.events.InstanceHealthEvent;
 import org.assertj.core.api.Assertions;
+import org.awaitility.Awaitility;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -28,6 +32,7 @@ import org.mockito.Mock;
 import org.mockito.Mockito;
 
 import java.util.List;
+import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
@@ -73,6 +78,15 @@ public class DockerComputeBackendTest {
     private ListContainersCmd listContainersCmd;
 
     @Mock
+    private InspectContainerCmd inspectContainerCmd;
+
+    @Mock
+    private InspectContainerResponse inspectContainerResponse;
+
+    @Mock
+    private InspectContainerResponse.ContainerState inspectContainerState;
+
+    @Mock
     private EventBus eventBus;
 
     private Executor executor;
@@ -85,6 +99,10 @@ public class DockerComputeBackendTest {
         Mockito.when(dockerClient.listContainersCmd()).thenReturn(listContainersCmd);
         Mockito.when(listContainersCmd.withShowAll(true)).thenReturn(listContainersCmd);
         Mockito.when(listContainersCmd.exec()).thenReturn(List.of());
+        Mockito.lenient().when(dockerClient.inspectContainerCmd(Mockito.anyString())).thenReturn(inspectContainerCmd);
+        Mockito.lenient().when(inspectContainerCmd.exec()).thenReturn(inspectContainerResponse);
+        Mockito.lenient().when(inspectContainerResponse.getState()).thenReturn(inspectContainerState);
+        Mockito.lenient().when(inspectContainerState.getRunning()).thenReturn(false);
 
         Mockito.lenient().when(instance.id()).thenReturn(INSTANCE_ID);
         Mockito.lenient().when(instance.cpu()).thenReturn(CPU);
@@ -148,6 +166,7 @@ public class DockerComputeBackendTest {
         @BeforeEach
         void setup() {
             computeBackend = newBackend();
+            Mockito.lenient().when(inspectContainerState.getRunning()).thenReturn(true);
 
             createContainer();
 
@@ -160,7 +179,7 @@ public class DockerComputeBackendTest {
                     EventAction.START
             )).thenReturn(eventFuture);
 
-            Mockito.when(dockerClient.startContainerCmd(CONTAINER_ID))
+            Mockito.lenient().when(dockerClient.startContainerCmd(CONTAINER_ID))
                     .thenReturn(startContainerCmd);
         }
 
@@ -200,9 +219,22 @@ public class DockerComputeBackendTest {
                     CONTAINER_ID,
                     EventAction.START
             )).thenReturn(failedFuture);
+            Mockito.doReturn(false).when(inspectContainerState).getRunning();
 
             Assertions.assertThatThrownBy(() -> computeBackend.start(instance).join())
                     .isInstanceOf(RuntimeException.class);
+            Mockito.verify(dockerClient, Mockito.never()).startContainerCmd(Mockito.anyString());
+        }
+
+        @Test
+        void It_should_fail_the_wait_when_the_start_command_fails() {
+            CompletableFuture<Event> pending = new CompletableFuture<>();
+            Mockito.when(eventListener.waitFor(CONTAINER_ID, EventAction.START)).thenReturn(pending);
+            Mockito.doReturn(false).when(inspectContainerState).getRunning();
+            Mockito.doThrow(new IllegalStateException("start failed")).when(startContainerCmd).exec();
+            Assertions.assertThatThrownBy(() -> computeBackend.start(instance).join())
+                    .hasRootCauseMessage("start failed");
+            Assertions.assertThat(pending).isCompletedExceptionally();
         }
     }
 
@@ -214,6 +246,7 @@ public class DockerComputeBackendTest {
         @BeforeEach
         void setup() {
             computeBackend = newBackend();
+            Mockito.lenient().when(inspectContainerState.getRunning()).thenReturn(false);
 
             createContainer();
 
@@ -226,7 +259,7 @@ public class DockerComputeBackendTest {
                     EventAction.DIE
             )).thenReturn(eventFuture);
 
-            Mockito.when(dockerClient.stopContainerCmd(CONTAINER_ID))
+            Mockito.lenient().when(dockerClient.stopContainerCmd(CONTAINER_ID))
                     .thenReturn(stopContainerCmd);
         }
 
@@ -266,8 +299,21 @@ public class DockerComputeBackendTest {
                     CONTAINER_ID,
                     EventAction.DIE
             )).thenReturn(failedFuture);
+            Mockito.doReturn(true).when(inspectContainerState).getRunning();
 
             Assertions.assertThatThrownBy(() -> computeBackend.stop(instance).join());
+            Mockito.verify(dockerClient, Mockito.never()).stopContainerCmd(Mockito.anyString());
+        }
+
+        @Test
+        void It_should_fail_the_wait_when_the_stop_command_fails() {
+            CompletableFuture<Event> pending = new CompletableFuture<>();
+            Mockito.when(eventListener.waitFor(CONTAINER_ID, EventAction.DIE)).thenReturn(pending);
+            Mockito.doReturn(true).when(inspectContainerState).getRunning();
+            Mockito.doThrow(new IllegalStateException("stop failed")).when(stopContainerCmd).exec();
+            Assertions.assertThatThrownBy(() -> computeBackend.stop(instance).join())
+                    .hasRootCauseMessage("stop failed");
+            Assertions.assertThat(pending).isCompletedExceptionally();
         }
     }
 
@@ -297,6 +343,44 @@ public class DockerComputeBackendTest {
                     .removeContainerCmd(CONTAINER_ID);
 
             Mockito.verify(removeContainerCmd).exec();
+        }
+
+        @Test
+        void It_should_allow_repeated_deletion() {
+            computeBackend.delete(instance).join();
+            computeBackend.delete(instance).join();
+            Mockito.verify(removeContainerCmd).exec();
+        }
+
+        @Test
+        void It_should_treat_an_already_removed_container_as_deleted() {
+            Mockito.doThrow(new NotFoundException("already absent")).when(removeContainerCmd).exec();
+            computeBackend.delete(instance).join();
+            computeBackend.delete(instance).join();
+            Mockito.verify(removeContainerCmd).exec();
+            Assertions.assertThat(computeBackend.describeStatuses(List.of(instance)))
+                    .containsEntry(INSTANCE_ID, ComputeStatus.MISSING);
+        }
+
+        @Test
+        void It_should_preserve_mapping_when_deletion_fails() {
+            Mockito.doThrow(new IllegalStateException("daemon failed")).when(removeContainerCmd).exec();
+            Assertions.assertThatThrownBy(() -> computeBackend.delete(instance).join())
+                    .hasRootCauseMessage("daemon failed");
+            Assertions.assertThat(computeBackend.describeStatuses(List.of(instance)))
+                    .containsEntry(INSTANCE_ID, ComputeStatus.RUNNING);
+        }
+
+        @Test
+        void It_should_remove_mapping_even_when_a_die_event_updates_it_during_deletion() {
+            Consumer<DockerContainerEvent> consumer = dockerEventConsumer();
+            Mockito.doAnswer(invocation -> {
+                consumer.accept(new DockerContainerEvent(CONTAINER_ID, EventAction.DIE));
+                return null;
+            }).when(removeContainerCmd).exec();
+            computeBackend.delete(instance).join();
+            Assertions.assertThat(computeBackend.describeStatuses(List.of(instance)))
+                    .containsEntry(INSTANCE_ID, ComputeStatus.MISSING);
         }
 
         @Test
@@ -339,10 +423,9 @@ public class DockerComputeBackendTest {
         }
 
         @Test
-        void Delete_should_throw() {
-            Assertions.assertThatThrownBy(
-                    () -> computeBackend.delete(instance).join()
-            ).hasMessageContaining("No Docker container exists");
+        void Delete_should_succeed_when_already_absent() {
+            Assertions.assertThat(computeBackend.delete(instance).join()).isNull();
+            Mockito.verify(dockerClient, Mockito.never()).removeContainerCmd(Mockito.anyString());
         }
     }
 
@@ -354,9 +437,6 @@ public class DockerComputeBackendTest {
             computeBackend = newBackend();
 
             createContainer();
-
-            Mockito.when(dockerClient.stopContainerCmd(CONTAINER_ID))
-                    .thenReturn(stopContainerCmd);
         }
 
         @Test
@@ -367,13 +447,11 @@ public class DockerComputeBackendTest {
         }
 
         @Test
-        void It_should_stop_the_container() throws Exception {
+        void It_should_preserve_the_container() throws Exception {
             computeBackend.close();
 
-            Mockito.verify(dockerClient)
-                    .stopContainerCmd(CONTAINER_ID);
-
-            Mockito.verify(stopContainerCmd).exec();
+            Mockito.verify(dockerClient, Mockito.never()).stopContainerCmd(Mockito.anyString());
+            Mockito.verify(dockerClient, Mockito.never()).removeContainerCmd(Mockito.anyString());
         }
 
         @Test
@@ -381,6 +459,59 @@ public class DockerComputeBackendTest {
             computeBackend.close();
 
             Mockito.verify(dockerClient).close();
+        }
+
+        @Test
+        void It_should_unsubscribe_the_original_event_consumer() throws Exception {
+            Consumer<DockerContainerEvent> consumer = dockerEventConsumer();
+            computeBackend.close();
+            Mockito.verify(eventBus).unsubscribe(DockerContainerEvent.class, consumer);
+            consumer.accept(new DockerContainerEvent(CONTAINER_ID, EventAction.UNHEALTHY));
+            Mockito.verify(eventBus, Mockito.never()).publish(Mockito.any());
+        }
+
+        @Test
+        void It_should_close_resources_only_once() throws Exception {
+            computeBackend.close();
+            computeBackend.close();
+            Mockito.verify(eventListener).close();
+            Mockito.verify(dockerClient).close();
+        }
+
+        @Test
+        void It_should_still_close_the_client_when_the_listener_fails() throws Exception {
+            IOException failure = new IOException("listener close failed");
+            Mockito.doThrow(failure).when(eventListener).close();
+            Assertions.assertThatThrownBy(computeBackend::close).isSameAs(failure);
+            Mockito.verify(dockerClient).close();
+        }
+
+        @Test
+        void It_should_preserve_both_close_failures() throws Exception {
+            IOException listenerFailure = new IOException("listener close failed");
+            IOException clientFailure = new IOException("client close failed");
+            Mockito.doThrow(listenerFailure).when(eventListener).close();
+            Mockito.doThrow(clientFailure).when(dockerClient).close();
+            Assertions.assertThatThrownBy(computeBackend::close)
+                    .isSameAs(listenerFailure)
+                    .hasSuppressedException(clientFailure);
+        }
+
+        @Test
+        void It_should_reject_operations_after_close() throws Exception {
+            computeBackend.close();
+            Mockito.clearInvocations(dockerClient, eventListener);
+            Assertions.assertThatThrownBy(() -> computeBackend.create(instance))
+                    .isInstanceOf(IllegalStateException.class);
+            Assertions.assertThatThrownBy(() -> computeBackend.start(instance))
+                    .isInstanceOf(IllegalStateException.class);
+            Assertions.assertThatThrownBy(() -> computeBackend.stop(instance))
+                    .isInstanceOf(IllegalStateException.class);
+            Assertions.assertThatThrownBy(() -> computeBackend.delete(instance))
+                    .isInstanceOf(IllegalStateException.class);
+            Assertions.assertThatThrownBy(() -> computeBackend.describeStatuses(List.of(instance)))
+                    .isInstanceOf(IllegalStateException.class);
+            Mockito.verifyNoInteractions(dockerClient, eventListener);
         }
     }
 
@@ -399,6 +530,7 @@ public class DockerComputeBackendTest {
                     .thenReturn(List.of(container));
 
             DockerComputeBackend backend = newBackend();
+            Mockito.lenient().when(inspectContainerState.getRunning()).thenReturn(true);
 
             Assertions.assertThat(
                     backend.describeStatuses(List.of(instance))
@@ -541,6 +673,7 @@ public class DockerComputeBackendTest {
                     .thenReturn(List.of(container));
 
             DockerComputeBackend backend = newBackend();
+            Mockito.doReturn(true).when(inspectContainerState).getRunning();
 
             Mockito.when(dockerClient.startContainerCmd(CONTAINER_ID))
                     .thenReturn(startContainerCmd);
@@ -591,29 +724,29 @@ public class DockerComputeBackendTest {
         @Test
         void It_should_update_status_for_start_and_die_events() {
             Consumer<DockerContainerEvent> consumer = dockerEventConsumer();
+            Mockito.doReturn(false).when(inspectContainerState).getRunning();
 
             consumer.accept(new DockerContainerEvent(CONTAINER_ID, EventAction.DIE));
+            Awaitility.await().untilAsserted(() -> Assertions.assertThat(computeBackend.describeStatuses(List.of(instance)))
+                    .containsEntry(INSTANCE_ID, ComputeStatus.STOPPED));
 
-            Assertions.assertThat(computeBackend.describeStatuses(List.of(instance)))
-                    .containsEntry(INSTANCE_ID, ComputeStatus.STOPPED);
-
+            Mockito.doReturn(true).when(inspectContainerState).getRunning();
             consumer.accept(new DockerContainerEvent(CONTAINER_ID, EventAction.START));
 
-            Assertions.assertThat(computeBackend.describeStatuses(List.of(instance)))
-                    .containsEntry(INSTANCE_ID, ComputeStatus.RUNNING);
+            Awaitility.await().untilAsserted(() -> Assertions.assertThat(computeBackend.describeStatuses(List.of(instance)))
+                    .containsEntry(INSTANCE_ID, ComputeStatus.RUNNING));
         }
 
         @Test
         void It_should_publish_an_instance_health_event() {
+            Mockito.when(inspectContainerState.getRunning()).thenReturn(true);
             dockerEventConsumer().accept(new DockerContainerEvent(
                     CONTAINER_ID,
                     EventAction.UNHEALTHY
             ));
 
-            Mockito.verify(eventBus).publish(new InstanceHealthEvent(
-                    INSTANCE_ID,
-                    EventAction.UNHEALTHY
-            ));
+            Awaitility.await().untilAsserted(() -> Mockito.verify(eventBus).publish(new InstanceHealthEvent(
+                    INSTANCE_ID, EventAction.UNHEALTHY)));
             Assertions.assertThat(computeBackend.describeStatuses(List.of(instance)))
                     .containsEntry(INSTANCE_ID, ComputeStatus.RUNNING);
         }
@@ -630,12 +763,14 @@ public class DockerComputeBackendTest {
     }
 
     private DockerComputeBackend newBackend() {
-        return new DockerComputeBackend(
+        DockerComputeBackend backend = new DockerComputeBackend(
                 dockerClient,
                 eventListener,
                 eventBus,
                 executor
         );
+        backend.initialize();
+        return backend;
     }
 
     @SuppressWarnings("unchecked")

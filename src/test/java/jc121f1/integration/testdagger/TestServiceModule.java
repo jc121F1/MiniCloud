@@ -4,11 +4,14 @@ import com.github.dockerjava.api.DockerClient;
 import dagger.Module;
 import dagger.Provides;
 import jc121f1.services.auth.AuthService;
+import jc121f1.services.authz.AuthorizationService;
 import jc121f1.services.instance.InstanceService;
 import jc121f1.services.instance.InstanceServiceImpl;
 import jc121f1.services.instance.compute.ComputeBackend;
 import jc121f1.services.instance.events.EventBus;
 import jc121f1.services.instance.store.InstanceStore;
+import jc121f1.services.instance.store.nosql.DynamoDbInstanceStore;
+import jc121f1.runtime.StoreInitializer;
 import org.assertj.core.util.VisibleForTesting;
 import org.mockito.Mockito;
 
@@ -21,10 +24,26 @@ import java.time.ZoneOffset;
 @VisibleForTesting
 public class TestServiceModule {
 
+    @Provides @Singleton
+    StoreInitializer storeInitializer() {
+        return Mockito.mock(StoreInitializer.class);
+    }
+
+    @Provides @Singleton
+    DynamoDbInstanceStore initializableInstanceStore() {
+        return Mockito.mock(DynamoDbInstanceStore.class);
+    }
+
     @Provides
     @Singleton
     AuthService authService() {
         return Mockito.mock(AuthService.class);
+    }
+
+    @Provides
+    @Singleton
+    AuthorizationService authorizationService() {
+        return Mockito.mock(AuthorizationService.class);
     }
 
     @Provides
@@ -62,11 +81,19 @@ public class TestServiceModule {
 
     @Provides
     @Singleton
-    InstanceService instanceService(
+    InstanceServiceImpl managedInstanceService(
             Clock clock,
             ComputeBackend computeBackend,
-            InstanceStore instanceStore) {
+            EventBus events,
+            InstanceStore instanceStore,
+            AuthorizationService authorizationService) {
 
-        return new InstanceServiceImpl(clock, computeBackend, eventBus(), instanceStore);
+        return new InstanceServiceImpl(clock, computeBackend, events, instanceStore, authorizationService);
+    }
+
+    @Provides
+    @Singleton
+    InstanceService instanceService(InstanceServiceImpl service) {
+        return service;
     }
 }

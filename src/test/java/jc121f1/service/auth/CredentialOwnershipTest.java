@@ -30,6 +30,8 @@ class CredentialOwnershipTest {
         }
         Credential legacy = original.toBuilder().createdByUserId(null).build();
         Assertions.assertThatThrownBy(() -> store.update(legacy, original)).isInstanceOf(IllegalArgumentException.class);
+        Credential revoked = original.toBuilder().revoked(true).build();
+        Assertions.assertThatThrownBy(() -> store.update(revoked, original)).isInstanceOf(IllegalArgumentException.class);
         Mockito.verifyNoInteractions(client, table);
     }
 }

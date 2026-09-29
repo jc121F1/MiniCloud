@@ -33,8 +33,28 @@ jobs:
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@af1da67850ed9a4cedd57bfd976089dd991e2582 # v4.0.0
 
+    - name: Start DynamoDB Local
+      run: docker run --detach --name dynamodb-local --publish 8000:8000 amazon/dynamodb-local:3.3.0 -jar DynamoDBLocal.jar -inMemory -sharedDb
+
+    - name: Wait for DynamoDB Local
+      run: |
+        for attempt in {1..30}; do
+          if curl --silent --output /dev/null http://localhost:8000; then
+            exit 0
+          fi
+          sleep 1
+        done
+        docker logs dynamodb-local
+        exit 1
+
+    - name: Pull MiniCloud instance image
+      run: docker pull jc121f1/alpine:latest
+
     - name: Build with Gradle Wrapper
       run: ./gradlew build
+      env:
+        DynamoDbLocalAvailable: 'True'
+        DockerE2EAvailable: 'True'
 
     # NOTE: The Gradle Wrapper is the default and recommended way to run Gradle (https://docs.gradle.org/current/userguide/gradle_wrapper.html).
     # If your project does not have the Gradle Wrapper configured, you can use the following configuration to run Gradle with a specified version.

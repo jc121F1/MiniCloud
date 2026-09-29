@@ -3,4 +3,7 @@
     <Match>
         <Class name="~jc121f1\.minicloud\.client\..*" />
     </Match>
+    <Match>
+        <Bug code="CT"/>
+    </Match>
 </FindBugsFilter>

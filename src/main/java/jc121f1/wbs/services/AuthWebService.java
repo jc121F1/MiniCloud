@@ -61,6 +61,7 @@ public class AuthWebService extends WebService {
                     post("create", component.createUserHandler(), AuthOperation.CREATE_USER);
                     post("describe", component.getUserHandler(), AuthOperation.DESCRIBE_USER);
                     post("delete", component.deleteUserHandler(), AuthOperation.DELETE_USER);
+                    post("transfer-ownership", component.transferOwnershipHandler(), AuthOperation.TRANSFER_OWNERSHIP);
                     post("login", component.loginHandler());
                 });
                 path("credentials", () -> {
