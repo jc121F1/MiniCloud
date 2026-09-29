@@ -93,7 +93,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public User createUser(CreateUserRequest createUserRequest) {
-        requireRequest(createUserRequest);
+        requireRequestReference(createUserRequest);
         if (createUserRequest.accountId() != null) {
             throw new UnauthorizedException("Authentication required for an existing account");
         }
@@ -103,10 +103,11 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public User createUser(AuthenticatedSession caller, CreateUserRequest createUserRequest) {
         Objects.requireNonNull(caller, "caller");
-        requireRequest(createUserRequest);
+        requireRequestReference(createUserRequest);
         requireText(createUserRequest.accountId(), "accountId");
         authorizationService.authorize(caller, AuthAction.CREATE_USER,
                 resource(createUserRequest.accountId(), AuthResourceType.ACCOUNT, createUserRequest.accountId()));
+        requireRequest(createUserRequest);
         return createUserInternal(createUserRequest);
     }
 
@@ -171,7 +172,8 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public User getUser(AuthenticatedSession caller, GetUserRequest getUserRequest) {
         Objects.requireNonNull(caller, "caller");
-        requireRequest(getUserRequest);
+        requireRequest(getUserRequest, request -> jc121f1.common.validation.RequestValidator.requireAtLeastOne(
+                request.userId() != null, "userId", request.email() != null, "email"));
         String identifier = Optional.ofNullable(getUserRequest.userId()).orElse(getUserRequest.email());
         User user = getUser(identifier);
         authorizationService.authorize(caller, AuthAction.DESCRIBE_USER,
@@ -189,7 +191,8 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public User deleteUser(AuthenticatedSession caller, DeleteUserRequest deleteUserRequest) {
         Objects.requireNonNull(caller, "caller");
-        requireRequest(deleteUserRequest);
+        requireRequest(deleteUserRequest, request -> jc121f1.common.validation.RequestValidator.requireAtLeastOne(
+                request.userId() != null, "userId", request.email() != null, "email"));
         String identifier = Optional.ofNullable(deleteUserRequest.userId()).orElse(deleteUserRequest.email());
         User user = getUser(identifier);
         authorizationService.authorize(caller, AuthAction.DELETE_USER,
@@ -403,15 +406,29 @@ public class AuthServiceImpl implements AuthService {
         }
     }
 
-    private static void requireRequest(Object request) {
+    private static <T> T requireRequest(T request) {
+        return requireRequest(request, ignored -> { });
+    }
+
+    private static <T> T requireRequest(T request, java.util.function.Consumer<T> shapeValidator) {
+        try {
+            return jc121f1.common.validation.RequestValidator.validate(request, shapeValidator);
+        } catch (jc121f1.common.validation.RequestValidationException error) {
+            throw new ValidationException(error.getMessage(), error.violations());
+        }
+    }
+
+    private static void requireRequestReference(Object request) {
         if (request == null) {
-            throw new ValidationException("Request is required");
+            throw new ValidationException("Request validation failed",
+                    java.util.List.of(new jc121f1.common.validation.FieldViolation("request", "required")));
         }
     }
 
     private static void requireText(String value, String field) {
         if (value == null || value.isBlank()) {
-            throw new ValidationException(field + " is required");
+            throw new ValidationException(field + " is required",
+                    java.util.List.of(new jc121f1.common.validation.FieldViolation(field, "required")));
         }
     }
 

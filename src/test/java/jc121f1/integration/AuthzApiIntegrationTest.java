@@ -213,6 +213,16 @@ class AuthzApiIntegrationTest {
     }
 
     @Test
+    void rejects_non_json_content_types_with_a_stable_http_error_body() throws Exception {
+        var response = send("POST", "/policies/create", "{}", "owner-token", "text/plain");
+
+        Assertions.assertThat(response.statusCode()).isEqualTo(415);
+        Assertions.assertThat(mapper.readTree(response.body()))
+                .isEqualTo(mapper.readTree("{\"statusCode\":415,\"message\":\"HTTP request rejected\"}"));
+        Mockito.verifyNoInteractions(policies);
+    }
+
+    @Test
     void inactive_accounts_and_deleted_or_revoked_identities_cannot_manage_policies() throws Exception {
         Mockito.when(accounts.get(ACCOUNT, true)).thenReturn(found(account().toBuilder().status(Account.AccountStatus.SUSPENDED).build()));
         Assertions.assertThat(send("GET", "/policies", "", "owner-token").statusCode()).isEqualTo(403);
@@ -275,8 +285,12 @@ class AuthzApiIntegrationTest {
     }
 
     private HttpResponse<String> send(String method, String path, String body, String token) throws Exception {
+        return send(method, path, body, token, "application/json");
+    }
+
+    private HttpResponse<String> send(String method, String path, String body, String token, String contentType) throws Exception {
         HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://localhost:" + app.port() + path))
-                .header("Content-Type", "application/json").method(method, HttpRequest.BodyPublishers.ofString(body));
+                .header("Content-Type", contentType).method(method, HttpRequest.BodyPublishers.ofString(body));
         if (token != null) {
             request.header("Authorization", "Bearer " + token);
         }

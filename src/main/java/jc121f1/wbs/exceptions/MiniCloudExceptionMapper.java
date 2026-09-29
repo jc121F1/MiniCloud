@@ -39,6 +39,9 @@ public class MiniCloudExceptionMapper {
     }
 
     private CustomerFacingError translate(Exception e) {
+        if (e instanceof jc121f1.common.validation.RequestValidationException validation) {
+            return new ValidationError(validation.getMessage(), validation.violations());
+        }
         Function<String, CustomerFacingError> factory = exceptionMap.get(e.getClass());
 
         return factory == null

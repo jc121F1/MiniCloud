@@ -1,4 +1,6 @@
 package jc121f1.model.auth.api.request;
 
-public record InvalidateCredentialRequest(String credentialId) {
+import jakarta.validation.constraints.NotBlank;
+
+public record InvalidateCredentialRequest(@NotBlank(message = "required") String credentialId) {
 }

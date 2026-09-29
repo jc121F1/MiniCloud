@@ -199,11 +199,8 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
     public Instance get(AuthenticatedSession caller, GetInstanceRequest request) {
         Objects.requireNonNull(caller, "caller");
         requireOpen();
-
-        if (!request.hasIdentifier()) {
-            throw new ValidationException(
-                    "GetInstanceRequest must contain one of [\"name\" or \"instanceId\"]");
-        } else if (request.hasInstanceId()) {
+        validateIdentifierRequest(request);
+        if (request.hasInstanceId()) {
             Instance instance = instanceStore.get(request.instanceId()).join()
                     .orElseThrow(() -> new ResourceNotFoundException("Instance not found " + request.instanceId()));
             authorize(caller, InstanceAction.DESCRIBE, instance);
@@ -234,6 +231,7 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
         Objects.requireNonNull(caller, "caller");
         requireOpen();
         authorizationService.authorize(caller, InstanceAction.CREATE, accountResource(caller.accountId()));
+        validateRequest(request);
         String instanceId;
         Instance createdInstance;
 
@@ -262,6 +260,7 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
         Objects.requireNonNull(caller, "caller");
         requireOpen();
         authorizationService.authorize(caller, InstanceAction.LIST, accountResource(caller.accountId()));
+        validateRequest(request);
         return instanceStore.list().join().stream()
                 .filter(instance -> caller.accountId().equals(instance.accountId()))
                 .filter(instance -> authorizationService.evaluate(caller, InstanceAction.DESCRIBE,
@@ -280,10 +279,8 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
         Instance remove;
         String identifier;
 
-        if (request.instanceId() == null && request.name() == null) {
-            throw new ValidationException(
-                    "DeleteInstanceRequest must contain one of [\"name\" or \"instanceId\"]");
-        } else if (request.instanceId() != null) {
+        validateIdentifierRequest(request);
+        if (request.instanceId() != null) {
             identifier = request.instanceId();
         } else {
             identifier = request.name();
@@ -320,10 +317,8 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
         Instance stop;
         String identifier;
 
-        if (request.instanceId() == null && request.name() == null) {
-            throw new ValidationException(
-                    "StopInstanceRequest must contain one of [\"name\" or \"instanceId\"]");
-        } else if (request.instanceId() != null) {
+        validateIdentifierRequest(request);
+        if (request.instanceId() != null) {
             identifier = request.instanceId();
         } else {
             identifier = request.name();
@@ -350,10 +345,8 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
         Instance start;
         String identifier;
 
-        if (request.instanceId() == null && request.name() == null) {
-            throw new ValidationException(
-                    "StopInstanceRequest must contain one of [\"name\" or \"instanceId\"]");
-        } else if (request.instanceId() != null) {
+        validateIdentifierRequest(request);
+        if (request.instanceId() != null) {
             identifier = request.instanceId();
         } else {
             identifier = request.name();
@@ -470,6 +463,49 @@ public class InstanceServiceImpl implements InstanceService, AutoCloseable {
     private void requireOpen() {
         if (closed) {
             throw new IllegalStateException("Instance service is closed");
+        }
+    }
+
+    private static <T> T validateRequest(T request) {
+        return validateRequest(request, ignored -> { });
+    }
+
+    private static <T> T validateRequest(T request, java.util.function.Consumer<T> shapeValidator) {
+        try {
+            return jc121f1.common.validation.RequestValidator.validate(request, shapeValidator);
+        } catch (jc121f1.common.validation.RequestValidationException error) {
+            throw new ValidationException(error.getMessage(), error.violations());
+        }
+    }
+
+    private static void validateIdentifierRequest(GetInstanceRequest request) {
+        validateRequest(request, value -> validateIdentifier(value.name(), value.instanceId()));
+    }
+
+    private static void validateIdentifierRequest(DeleteInstanceRequest request) {
+        validateRequest(request, value -> validateIdentifier(value.name(), value.instanceId()));
+    }
+
+    private static void validateIdentifierRequest(StopInstanceRequest request) {
+        validateRequest(request, value -> validateIdentifier(value.name(), value.instanceId()));
+    }
+
+    private static void validateIdentifierRequest(StartInstanceRequest request) {
+        validateRequest(request, value -> validateIdentifier(value.name(), value.instanceId()));
+    }
+
+    private static void validateIdentifier(String name, String instanceId) {
+        jc121f1.common.validation.RequestValidator.requireAtLeastOne(
+                name != null, "name", instanceId != null, "instanceId");
+        List<jc121f1.common.validation.FieldViolation> violations = new java.util.ArrayList<>();
+        if (name != null && name.isBlank()) {
+            violations.add(new jc121f1.common.validation.FieldViolation("name", "required"));
+        }
+        if (instanceId != null && instanceId.isBlank()) {
+            violations.add(new jc121f1.common.validation.FieldViolation("instanceId", "required"));
+        }
+        if (!violations.isEmpty()) {
+            throw new jc121f1.common.validation.RequestValidationException(violations);
         }
     }
 
