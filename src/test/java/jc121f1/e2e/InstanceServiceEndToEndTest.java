@@ -397,6 +397,7 @@ class InstanceServiceEndToEndTest {
     @SneakyThrows
     private String setupAuth() {
         AuthWebServiceComponent authWebServiceComponent = DaggerAuthWebServiceComponent.create();
+        authWebServiceComponent.storeInitializer().initialize();
         authWebService = new AuthWebService(authWebServiceComponent).create();
         authWebService.start(0);
 
