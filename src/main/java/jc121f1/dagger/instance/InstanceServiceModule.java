@@ -8,6 +8,7 @@ import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import dagger.Binds;
 import dagger.Module;
 import dagger.Provides;
+import jc121f1.dagger.qualifiers.DockerHost;
 import jc121f1.dagger.qualifiers.RegistryMail;
 import jc121f1.dagger.qualifiers.RegistryPass;
 import jc121f1.dagger.qualifiers.RegistryUrl;
@@ -59,9 +60,10 @@ public abstract class InstanceServiceModule {
                                             @RegistryPass String pass,
                                             @RegistryMail String mail,
                                             @RegistryUrl String url,
+                                            @DockerHost String dockerHost,
                                             RuntimeResources resources) {
         DockerClientConfig config = DefaultDockerClientConfig.createDefaultConfigBuilder()
-                .withDockerHost("npipe:////./pipe/dockerDesktopLinuxEngine")
+                .withDockerHost(dockerHost)
                 .withDockerTlsVerify(false)
                 .withRegistryUsername(user)
                 .withRegistryPassword(pass)
