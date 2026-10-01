@@ -64,11 +64,11 @@ dependencies {
     testImplementation(platform("org.junit:junit-bom:6.1.3"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testImplementation("org.assertj:assertj-core:3.27.7")
-    testImplementation("org.mockito:mockito-junit-jupiter:5.23.0")
+    testImplementation("org.mockito:mockito-junit-jupiter:5.24.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation("io.javalin:javalin-testtools:7.2.3")
     testImplementation("org.awaitility:awaitility:4.3.0")
-    mockitoAgent("org.mockito:mockito-core:5.23.0")  { isTransitive = false }
+    mockitoAgent("org.mockito:mockito-core:5.24.0")  { isTransitive = false }
 
     annotationProcessor("com.google.dagger:dagger-compiler:2.60.1")
     annotationProcessor("io.javalin.community.openapi:openapi-annotation-processor:$openapi")
