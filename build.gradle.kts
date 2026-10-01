@@ -6,7 +6,7 @@ plugins {
     idea
     jacoco
     checkstyle
-    id("io.freefair.lombok") version "9.5.0"
+    id("io.freefair.lombok") version "9.7.0"
     id("com.gradleup.shadow") version "9.6.1"
     id("com.github.spotbugs") version "6.5.11"
     id("org.openapi.generator") version "7.25.0"
